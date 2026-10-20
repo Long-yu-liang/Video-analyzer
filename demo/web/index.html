@@ -1,0 +1,85 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>视频分析 · DAY 02</title>
+<style>:root{color-scheme:light;font-family:system-ui,"Microsoft YaHei",sans-serif;color:#23362f;background:#eeede7}*{box-sizing:border-box}body{max-width:1160px;margin:36px auto;padding:0 24px}header{border-top:5px solid #23362f;padding-top:24px}small{color:#a64a2f;letter-spacing:.1em}h1{font-size:36px;margin:12px 0}p{line-height:1.7;color:#647269}.grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:24px}section{background:#fffefb;padding:24px;border:1px solid #d9dfd6;border-radius:12px}label{display:block;margin:15px 0 7px}input,select,button{font:inherit;padding:10px;border:1px solid #c4cec4;border-radius:6px;background:white;max-width:100%}select{width:100%}button{cursor:pointer;background:#23362f;color:white;margin:16px 8px 0 0}button:disabled{opacity:.45;cursor:default}video{width:100%;max-height:340px;background:#17251f;border-radius:8px;margin-top:16px}.note{background:#f1f4ed;padding:12px;border-radius:6px;font-size:14px}.event{width:100%;text-align:left;background:#f1f4ed;color:#23362f;margin:8px 0;padding:14px}.event span{display:block;font-size:13px;color:#647269;margin-top:8px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:340px;overflow:auto}.status{min-height:28px;color:#a64a2f}h2{font-size:21px}@media(max-width:760px){.grid{grid-template-columns:1fr}h1{font-size:28px}}</style>
+<header><small>VIDEO ANALYZER / DAY 02</small><h1>从视频事实寻找交互机会</h1><p>选择一条视频与模型，查看可观察事件和候选交互点；点击候选点回看原片。</p></header>
+<div class="note" id="configState">正在检查配置…</div>
+<main class="grid"><section><h2>01 / 输入</h2>
+<label for="sample">mp4-example</label><select id="sample"></select>
+<label for="file">或上传其他 MP4 · 最长 60 秒 / 12 MiB</label><input id="file" type="file" accept="video/mp4">
+<video id="video" controls></video>
+<label for="model">选择模型</label><select id="model"></select>
+<label for="prompt">提示词版本</label><select id="prompt"></select>
+<label for="mode">输入方式</label><select id="mode"><option value="frames">顺序采样画面 + 真实时间戳（不含声音）</option><option value="direct" selected>直接视频（声音能力取决于模型）</option></select>
+<label for="fps">采样率</label><select id="fps"><option>0.5</option><option>1</option><option selected>2</option></select>
+<p class="note">下拉列表来自 .env 的 BEEROUTE_MODELS。每次分析只调用当前选中的模型和提示词，结果写入 results/ 对应模型文件夹。v9 为跨场景 few-shot 实验版，仍须逐条回看验证；可手动切换旧版对照。采样率越低越可能遗漏短动作。直接视频仅在 Gemini 或 qwen3.8-omni-flash 模型下尝试分析音轨；其他模型使用无音轨副本。抽帧没有声音。</p>
+<button id="analyze" disabled>调用真实 AI 分析</button><div class="status" id="status" role="status" aria-live="polite"></div></section>
+<section><h2>02 / 候选交互点</h2><p id="summary">尚未调用模型。没有预置分析结果。</p><div id="metrics"></div><div id="points"></div><h2>03 / 可观察事件</h2><div id="events"></div><ul id="limitations"></ul><button id="download" disabled>导出本次完整记录</button><details><summary>查看模型原始响应与用量</summary><pre id="raw">暂无</pre></details><p class="note">时间为模型估计值，点击候选点或事件回看核实。结构校验通过不代表事实一定正确；没有合适机会时允许空候选。</p></section></main>
+<script>
+const $=id=>document.getElementById(id);let config,record,blobURL,busy=false;
+function ready(){
+  if(!config)return;
+  const selected=$('model').value;
+  const hasVideo=!!$('sample').value||!!$('file').files.length;
+  $('analyze').disabled=busy||!hasVideo||!selected||!$('prompt').value||!config.configured.beeroute;
+  const key=config.configured.beeroute?'已配置':'待配置 BEEROUTE_API_KEY';
+  const names=Object.keys(config.models||{});
+  $('configState').textContent=names.length?`密钥${key}。提示词 ${$('prompt').value||config.prompt_file}。本次跑 ${selected||names[0]}，结果写入 results/${selected||names[0]}/。`:'请在 .env 设置 BEEROUTE_MODELS 后重启。';
+}
+fetch('/config').then(r=>r.json()).then(c=>{
+  config=c;
+  const model=$('model');
+  model.replaceChildren(...Object.keys(c.models||{}).map(name=>{const o=document.createElement('option');o.value=o.textContent=name;return o}));
+  if(c.models?.['qwen3.8-omni-flash'])model.value='qwen3.8-omni-flash';
+  const prompt=$('prompt');
+  const promptFiles=(c.prompt_files||[c.prompt_file]).filter(Boolean);
+  prompt.replaceChildren(...promptFiles.map(file=>{const o=document.createElement('option');o.value=file.match(/v\d+\.txt$/)?.[0].replace('.txt','')||'';o.textContent=file;return o}));
+  prompt.value=promptFiles.includes('prompts/v6.txt')?'v6':prompt.children[0]?.value||'';
+  const sample=$('sample');
+  const blank=document.createElement('option');blank.value='';blank.textContent='不使用样例，改为上传';
+  sample.replaceChildren(blank,...(c.samples||[]).map(name=>{const o=document.createElement('option');o.value=o.textContent=name;return o}));
+  ready();
+}).catch(()=>{$('configState').textContent='请在项目根目录运行 python demo/app.py，再访问本地地址。'});
+$('model').onchange=ready;
+$('prompt').onchange=ready;
+$('sample').onchange=async()=>{
+  if(blobURL){URL.revokeObjectURL(blobURL);blobURL=''}
+  $('file').value='';
+  const name=$('sample').value;
+  if(name){$('video').src='/sample?name='+encodeURIComponent(name)}
+  record=null;$('download').disabled=true;$('summary').textContent=name?('已选择 '+name+'，等待分析。'):'尚未选择视频。';
+  $('points').replaceChildren();$('events').replaceChildren();$('metrics').textContent='';$('limitations').replaceChildren();$('raw').textContent='暂无';ready();
+};
+$('file').onchange=()=>{
+  $('sample').value='';
+  if(blobURL)URL.revokeObjectURL(blobURL);
+  const f=$('file').files[0];
+  if(f){blobURL=URL.createObjectURL(f);$('video').src=blobURL}
+  record=null;$('download').disabled=true;$('summary').textContent='已选择上传文件，等待分析。';
+  $('points').replaceChildren();$('events').replaceChildren();$('metrics').textContent='';$('limitations').replaceChildren();$('raw').textContent='暂无';ready();
+};
+$('analyze').onclick=async()=>{
+  busy=true;ready();$('download').disabled=true;
+  $('file').disabled=$('sample').disabled=$('mode').disabled=$('fps').disabled=$('prompt').disabled=true;
+  $('points').replaceChildren();$('events').replaceChildren();$('limitations').replaceChildren();$('metrics').textContent='';
+  $('summary').textContent='正在分析当前视频…';$('raw').textContent='等待模型响应';
+  $('status').textContent='分析中，请等待；此操作会调用 Beeroute 的计费 API。';
+  try{
+    const params={model:$('model').value,mode:$('mode').value,fps:$('fps').value,prompt:$('prompt').value};
+    let body;
+    if($('sample').value)params.sample=$('sample').value;
+    else{params.name=$('file').files[0].name;body=$('file').files[0]}
+    let r=await fetch('/analyze?'+new URLSearchParams(params),{method:'POST',headers:{'X-Local-Token':config.token},body});
+    record=await r.json();$('raw').textContent=JSON.stringify(record,null,2);$('download').disabled=!record.record_file;
+    if(!r.ok||record.status!=='success')throw Error(record.error||'分析失败');
+    const a=record.analysis;$('summary').textContent=a.summary;
+    const u=record.usage||{},pt=u.prompt_tokens??u.promptTokenCount??'-',ct=u.completion_tokens??u.candidatesTokenCount??'-',tt=u.total_tokens??u.totalTokenCount??'-';
+    $('metrics').textContent=`${record.model} · ${record.video_name} · ${record.mode} · ${record.prompt_file} · 音频核验 ${record.audio_verification||'旧记录未标注'} · 视频 tokens ${record.video_tokens??'未报告'} · 总耗时 ${record.total_s}s · API 往返 ${record.api_roundtrip_s}s · 输入 ${pt} / 输出 ${ct} / 合计 ${tt} tokens · 已写入 ${record.record_file}`;
+    if(!a.interaction_points.length)$('points').textContent='未发现有依据的交互机会。';
+    for(const point of a.interaction_points){const b=document.createElement('button');b.className='event';b.textContent=`${point.time_s.toFixed(2)} 秒 · ${point.player_action}`;const s=document.createElement('span');const source=point.source==='both'?'声画共同':point.source==='visual'?'仅画面':'旧记录未标注';const action=point.action_observed===false?'后续行动未出现（未拍到）':`相关动作约 ${point.action_start_s.toFixed(2)} 秒开始`;s.textContent=`依据来源：${source}；线索：${point.visible_cue}；原因：${point.reason}；依据：${point.evidence}；${action}；不确定：${point.uncertainty}`;b.append(s);b.onclick=()=>{$('video').currentTime=point.time_s;$('video').pause()};$('points').append(b)}
+    for(const e of a.events){const b=document.createElement('button');b.className='event';b.textContent=`${e.start_s.toFixed(2)}–${e.end_s.toFixed(2)} 秒 · ${e.description}`;const s=document.createElement('span');s.textContent=`依据：${e.evidence}；来源：${e.source}；不确定：${e.uncertainty||'未说明'}`;b.append(s);b.onclick=()=>{$('video').currentTime=e.start_s;$('video').pause()};$('events').append(b)}
+    for(const t of a.limitations){const li=document.createElement('li');li.textContent=t;$('limitations').append(li)}
+    $('status').textContent='分析完成，结果在 '+record.record_file+'。点击事件回看证据。';
+  }catch(e){$('summary').textContent='本次未获得通过校验的分析结果。';$('status').textContent=e.message}
+  finally{busy=false;$('file').disabled=$('sample').disabled=$('mode').disabled=$('fps').disabled=$('prompt').disabled=false;ready()}
+};
+$('download').onclick=()=>{const u=URL.createObjectURL(new Blob([JSON.stringify(record,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=u;a.download=(record.record_file||'video-analysis').split('/').pop();a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)};
+</script></html>

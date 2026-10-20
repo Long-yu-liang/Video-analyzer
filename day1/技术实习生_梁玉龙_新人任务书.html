@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>视频分析器｜技术实习生练手任务书</title>
+<style>
+:root{--paper:#fffefb;--bg:#eeede7;--ink:#23362f;--muted:#647269;--line:#d9dfd6;--accent:#a64a2f;--soft:#f1f4ed}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:24px}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.85 "Microsoft YaHei","PingFang SC",sans-serif}a{color:inherit}a:focus-visible{outline:3px solid var(--accent);outline-offset:5px}.sheet{max-width:1080px;margin:40px auto;background:var(--paper);padding:58px 72px 30px;border-top:7px solid var(--ink)}
+.eyebrow{font-size:12px;letter-spacing:.16em;color:var(--accent);font-weight:700}.meta{display:flex;justify-content:space-between;gap:16px;margin-bottom:36px;font-size:13px;color:var(--muted)}h1,h2,h3,p{margin-top:0}h1{font:700 clamp(38px,6vw,62px)/1.25 "SimSun","Songti SC",serif;letter-spacing:.03em;margin-bottom:16px}.subtitle{font-size:19px;max-width:710px;color:var(--muted);margin-bottom:25px}.intro{font-size:17px;max-width:800px}.route{display:flex;flex-wrap:wrap;gap:8px 12px;padding:20px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);font-size:14px;font-weight:700}.route b{color:var(--accent);font-weight:400}
+nav{display:flex;flex-wrap:wrap;gap:12px 28px;margin-top:24px;font-size:14px}nav a{text-decoration:none;border-bottom:1px solid var(--line)}nav a:hover{color:var(--accent)}section{padding-top:42px}h2{font:700 28px/1.4 "SimSun","Songti SC",serif;margin-bottom:22px}h2 span{font:12px/1.4 "Microsoft YaHei",sans-serif;color:var(--accent);display:block;margin-bottom:7px;letter-spacing:.12em}h3{font-size:18px;margin-bottom:8px}p{margin-bottom:14px}ul{padding-left:21px;margin:10px 0 16px}li{padding-left:3px}li+li{margin-top:7px}.principle{background:var(--soft);border-left:3px solid var(--accent);padding:18px 24px;margin:22px 0}.principle p:last-child{margin:0}.focus-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px 35px}.focus-item{border-top:1px solid var(--line);padding-top:14px}.focus-item p{font-size:15px;color:var(--muted);margin:0}.day{display:grid;grid-template-columns:92px 1fr;gap:22px;border-top:1px solid var(--line);padding:27px 0}.day-label{color:var(--accent);font-size:12px;font-weight:700;letter-spacing:.08em}.day-label strong{display:block;font:normal 46px/1.2 Georgia,serif;letter-spacing:-.04em}.day h3{font-size:22px}.question{color:var(--muted);font-size:15px;margin-bottom:12px}.outcome{padding:12px 16px;background:var(--soft);font-size:15px;margin:16px 0 0}.outcome strong{color:var(--accent)}.note{font-size:14px;color:var(--muted)}.deliverables{display:grid;grid-template-columns:1fr 1fr;gap:22px 32px}.deliverables article{border-top:1px solid var(--line);padding-top:15px}.deliverables p{font-size:15px;color:var(--muted);margin-bottom:0}.closing{font:700 23px/1.65 "SimSun","Songti SC",serif;padding:24px 0 0;border-top:2px solid var(--ink);margin-top:30px}footer{display:flex;justify-content:space-between;gap:16px;font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:17px;margin-top:35px}
+@media(max-width:760px){.sheet{margin:0;padding:30px 24px;border-top-width:5px}.meta{margin-bottom:25px;flex-wrap:wrap}.focus-grid,.deliverables{grid-template-columns:1fr;gap:20px}.day{grid-template-columns:57px 1fr;gap:14px}.day-label strong{font-size:36px}.day h3{font-size:20px}section{padding-top:32px}.subtitle{font-size:17px}footer{flex-wrap:wrap}}
+@media print{@page{size:A4;margin:17mm}body{background:white;font-size:10.5pt;line-height:1.65}.sheet{max-width:none;margin:0;padding:0;border-top-width:4px}nav{display:none}h1{font-size:34pt}.meta{margin-bottom:22px}.subtitle{font-size:12pt}section{padding-top:24px}h2{font-size:19pt;break-after:avoid}h3{break-after:avoid}.day,.focus-item,.deliverables article,.principle{break-inside:avoid}.day{padding:18px 0}.day h3{font-size:15pt}.question,.outcome,.focus-item p,.deliverables p{font-size:10.5pt}.closing{font-size:15pt}.principle,.outcome{-webkit-print-color-adjust:exact;print-color-adjust:exact}a{text-decoration:none}}
+</style>
+</head>
+<body>
+<div class="sheet">
+<header>
+  <div class="meta"><span class="eyebrow">技术实习生 · 练手任务书</span></div>
+  <h1>视频分析器</h1>
+  <p class="subtitle">从理解视频内容，到发现交互机会，再到生成可玩的片段。</p>
+  <p class="intro">开发一个视频分析工具：对用户上传的视频进行 AI 分析，找出适合加入交互的位置并打点；结合提前预设的小游戏类型，推荐并选择适合的玩法；进一步借助 AI 生成 JavaScript 交互内容，让视频中的互动设想可以实际试玩。</p>
+  <div class="route" aria-label="项目流程"><span>上传视频</span><b aria-hidden="true">→</b><span>AI 分析打点</span><b aria-hidden="true">→</b><span>选择小游戏</span><b aria-hidden="true">→</b><span>AI 生成 JS 交互</span><b aria-hidden="true">→</b><span>播放与试玩</span></div>
+  <nav aria-label="任务书目录"><a href="#goal">项目目标</a><a href="#focus">任务重点</a><a href="#schedule">每日安排</a><a href="#delivery">成果与复盘</a></nav>
+</header>
+<main>
+<section id="goal">
+  <h2><span>01 / GOAL</span>项目目标</h2>
+  <p>通过一个完整的小项目，熟悉影游平台中“视频理解—交互设计—内容生成—运行体验”的工作过程。既要把 AI 能力接入工具，也要判断它的输出是否有依据、是否适合转化为玩家操作。</p>
+  <p>期望一周结束时，可以演示：上传一段视频，查看 AI 找到的交互点及推荐理由，调整和选择合适的小游戏，再运行由 AI 辅助生成的 JS 交互，体验视频与小游戏的衔接。</p>
+  <div class="principle"><p><strong>实现方式保持开放。</strong>根据自己的技术基础选择模型、工具、技术栈和小游戏形式。每日安排是推进重点，可根据实际进展调整；优先做出能够说明思路、可以真实体验的完整流程。</p></div>
+</section>
+<section id="focus">
+  <h2><span>02 / FOCUS</span>任务重点</h2>
+  <div class="focus-grid">
+    <article class="focus-item"><h3>多模态模型的选择与使用</h3><p>理解不同模型如何接收视频或画面输入，比较它们对场景、动作、时间和交互机会的理解效果，形成有实际测试依据的选择。</p></article>
+    <article class="focus-item"><h3>提示词设计与持续优化</h3><p>把“帮我分析视频”逐步细化为“理解情境、寻找交互机会、说明依据、推荐玩法”，通过同一批样例观察提示词修改的影响。</p></article>
+    <article class="focus-item"><h3>从视频情境到小游戏设计</h3><p>提前整理小游戏类型，让 AI 在明确的玩法范围内推荐。关注玩家做什么、为什么在这里做，以及这次操作如何融入视频内容。</p></article>
+    <article class="focus-item"><h3>AI 生成 JS 与实际调试</h3><p>用清晰的玩法描述引导 AI 生成交互代码，运行并修正结果，理解代码如何处理输入、反馈和结束，而不止于获得一段代码。</p></article>
+  </div>
+</section>
+<section id="schedule">
+  <h2><span>03 / WEEK PLAN</span>每日安排</h2>
+  <p class="note">每天围绕一个主要问题推进，保留关键尝试、结果和判断，作为当天沟通与最终复盘的依据。</p>
+
+  <article class="day">
+    <div class="day-label">DAY<strong>01</strong></div>
+    <div><h3>探索多模态模型，跑通视频理解</h3>
+    <p class="question">今天要回答：什么样的模型与输入方式，适合这个视频分析任务？</p>
+    <ul>
+      <li>梳理项目体验流程，准备不同情境的视频样例，例如物体操作、人物对话、动作场景或空镜。</li>
+      <li>选择几种可用的多模态模型做小范围体验，观察视频内容理解、时间定位、响应速度和使用成本。</li>
+      <li>探索直接输入视频或抽取关键画面等方式，了解各自能提供哪些信息、会遗漏哪些信息。</li>
+      <li>选定适合继续开发的方案，完成从视频输入到真实 AI 分析结果的初步链路。</li>
+    </ul>
+    <p class="outcome"><strong>当天成果：</strong>一份简短的模型体验与选择说明，以及能展示真实视频分析结果的初步 Demo。</p></div>
+  </article>
+
+  <article class="day">
+    <div class="day-label">DAY<strong>02</strong></div>
+    <div><h3>优化提示词，找到值得交互的位置</h3>
+    <p class="question">今天要回答：如何让 AI 从描述视频，进一步理解哪里适合玩家参与？</p>
+    <ul>
+      <li>设计用于交互分析的提示词，让模型说明发生了什么、哪里适合加入交互，以及为什么适合。</li>
+      <li>尝试寻找动作发生前、角色做决定时、发现关键物体时等交互机会，并把建议对应到视频位置。</li>
+      <li>用相同视频反复调整提示词，比较打点是否合理、依据是否真实、结果是否稳定。</li>
+      <li>检查误判：普通镜头是否被硬加交互、动作是否已经结束、模型是否补出了视频没有提供的信息。</li>
+    </ul>
+    <p class="outcome"><strong>当天成果：</strong>可查看和定位的候选交互点，以及提示词修改前后的效果对比和判断。</p></div>
+  </article>
+
+  <article class="day">
+    <div class="day-label">DAY<strong>03</strong></div>
+    <div><h3>预设小游戏类型，完成交互编排</h3>
+    <p class="question">今天要回答：这个场景适合什么玩法，用户如何把建议变成自己的选择？</p>
+    <ul>
+      <li>整理一组小游戏类型，说明各自的玩法、适用情境和玩家目标。可参考点击物体、剧情选择、时机操作、连点或拖拽，也可自行补充。</li>
+      <li>让 AI 结合预设类型为交互点推荐玩法，并解释场景与玩法之间的关系。</li>
+      <li>实现基本的交互点查看、位置调整和小游戏选择，让用户可以接受、修改或放弃 AI 建议。</li>
+      <li>选择适合继续实现的交互方案，整理成清晰的玩法描述，为下一步代码生成准备输入。</li>
+    </ul>
+    <p class="outcome"><strong>当天成果：</strong>小游戏类型说明，以及从视频交互点到具体玩法的选择流程。</p></div>
+  </article>
+
+  <article class="day">
+    <div class="day-label">DAY<strong>04</strong></div>
+    <div><h3>借助 AI 生成 JS，让交互可以试玩</h3>
+    <p class="question">今天要回答：怎样把一个玩法想法，变成实际运行且符合预期的交互？</p>
+    <ul>
+      <li>把视频情境、玩家操作、画面表现、成功或失败条件描述给 AI，尝试生成可运行的 JavaScript 交互内容。</li>
+      <li>运行生成结果，检查操作是否有效、反馈是否清楚、游戏能否正常结束，结合报错和试玩反馈继续优化提示词与代码。</li>
+      <li>尝试让小游戏在选定的视频位置出现，并处理视频与小游戏之间的暂停、切换和继续播放。</li>
+      <li>理解生成代码的关键逻辑，在独立或隔离的预览环境中测试；记录哪些内容可以自动生成，哪些仍需要人工修改。</li>
+    </ul>
+    <p class="outcome"><strong>当天成果：</strong>能够实际试玩的 JS 交互样例，以及从玩法描述、AI 生成到调试改进的过程记录。</p></div>
+  </article>
+
+  <article class="day">
+    <div class="day-label">DAY<strong>05</strong></div>
+    <div><h3>串联完整体验，验证并复盘</h3>
+    <p class="question">今天要回答：换一段视频，这套流程还能发挥作用吗？</p>
+    <ul>
+      <li>串联上传、分析打点、玩法选择、交互生成与试玩，整理成可以演示的完整流程。</li>
+      <li>更换视频样例进行验证，观察模型推荐是否仍然合理，生成的交互是否贴合新场景。</li>
+      <li>修复影响使用的问题，关注分析失败、没有合适交互点、生成代码无法运行，以及小游戏结束后的体验。</li>
+      <li>整理模型选择、提示词优化、生成代码调试和产品体验方面的收获，说明后续接入影游平台时可以复用什么。</li>
+    </ul>
+    <p class="outcome"><strong>当天成果：</strong>完整 Demo、使用说明和项目复盘，现场演示从视频到可玩交互的过程。</p></div>
+  </article>
+</section>
+<section id="delivery">
+  <h2><span>04 / DELIVERY</span>成果与复盘</h2>
+  <div class="deliverables">
+    <article><h3>能体验的 Demo</h3><p>展示视频上传、AI 分析打点、小游戏选择与 JS 交互试玩。说明已完成的能力，以及还需要继续探索的部分。</p></article>
+    <article><h3>有依据的模型选择</h3><p>说明尝试了什么、观察到什么、为什么采用当前方案，以及它对视频理解和交互分析的局限。</p></article>
+    <article><h3>提示词与生成样例</h3><p>保留视频分析、玩法推荐、JS 生成中的代表性提示词和输出，展示优化前后的变化，包括失败案例。</p></article>
+    <article><h3>技术复盘</h3><p>说明实现思路、关键问题及解决过程，并提出后续扩展到影游平台时最值得继续做的方向。</p></article>
+  </div>
+  <div class="principle"><p><strong>评估重点：</strong>能否解释自己的模型选择，能否依据测试改进提示词，能否判断交互设计是否合理，以及能否把 AI 生成的代码调试成可玩的内容。界面完成度和功能数量作为补充，重点看完整体验、判断过程与解决问题的能力。</p></div>
+</section>
+</main>
+<footer><span>视频分析器 · 一周练手项目</span><span>面向后续影游平台开发</span></footer>
+</div>
+</body>
+</html>
