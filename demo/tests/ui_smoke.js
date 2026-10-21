@@ -74,11 +74,23 @@ vm.runInNewContext(script, {
   assert.match(nodes.points.children[0].children[0].textContent, /后续行动未拍到/);
   nodes.points.children[0].click();
   assert.equal(nodes.video.currentTime, 2.1);
+  points = [
+    { time_s: 1.2, opportunity: '观察物体', reason: '物体出现' },
+    { time_s: 2.4, opportunity: '决定方向', reason: '经过岔路' },
+  ];
+  nodes.prompt.value = 'v12';
+  await nodes.analyze.onclick();
+  assert.match(requestedURL, /prompt=v12/);
+  assert.equal(nodes.points.children.length, 2);
+  assert.match(nodes.points.children[1].textContent, /决定方向/);
+  assert.doesNotMatch(nodes.points.children[1].children[0].textContent, /undefined/);
+  nodes.points.children[1].click();
+  assert.equal(nodes.video.currentTime, 2.4);
   points = [];
   nodes.prompt.value = 'v7';
   await nodes.analyze.onclick();
   assert.match(requestedURL, /prompt=v7/);
   assert.equal(nodes.points.children.length, 0);
-  assert.equal(nodes.points.textContent, '未发现有依据的交互机会。');
+  assert.equal(nodes.points.textContent, '本次未建议交互点。');
   console.log('UI point seek and empty state OK');
 })().catch(error => { console.error(error); process.exitCode = 1; });

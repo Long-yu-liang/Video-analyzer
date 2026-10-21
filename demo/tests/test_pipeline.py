@@ -162,6 +162,39 @@ class PipelineChecks(unittest.TestCase):
         self.assertIn('action_observed', body['messages'][0]['content'][0]['text'])
         self.assertEqual(body['response_format'], {'type': 'json_object'})
 
+    def test_v12_accepts_multiple_simple_points_without_old_evidence_fields(self):
+        body = dict(summary='人物移动并拿起物体',
+                    events=[dict(start_s=0, end_s=2, description='人物走向桌面')],
+                    interaction_points=[dict(time_s=1.5, opportunity='观察物体', reason='此时物体出现在画面中'),
+                                        dict(time_s=0.5, opportunity='选择路径', reason='人物经过岔路')])
+        result = app.validate_open_interactions(json.dumps(body), 3)
+        self.assertEqual([p['time_s'] for p in result['interaction_points']], [0.5, 1.5])
+        self.assertEqual(result['limitations'], [])
+        for point in (dict(time_s=-1, opportunity='选择路径', reason='岔路'),
+                      dict(time_s=4, opportunity='选择路径', reason='岔路'),
+                      dict(time_s=True, opportunity='选择路径', reason='岔路'),
+                      dict(time_s=1, opportunity='', reason='岔路')):
+            with self.subTest(point=point), self.assertRaises(ValueError):
+                app.validate_open_interactions(json.dumps({**body, 'interaction_points': [point]}), 3)
+        # Older prompt versions still retain their original one-point and evidence contract.
+        with self.assertRaises(ValueError):
+            app.validate(self.day2_result([self.point(source='visual')] * 2), 3,
+                         False, True, True, max_points=1)
+
+    def test_v12_analyze_uses_open_schema(self):
+        meta = dict(duration_s=3, width=320, height=240, has_audio=False)
+        answer = json.dumps(dict(summary='test', events=[dict(start_s=0, end_s=2, description='经过桌面')],
+                                 interaction_points=[dict(time_s=0.5, opportunity='检查桌面', reason='经过此处'),
+                                                     dict(time_s=1.5, opportunity='转向', reason='出现岔路')]))
+        response = {'choices': [{'message': {'content': answer}, 'finish_reason': 'stop'}],
+                    'usage': {'prompt_tokens_details': {'video_tokens': 100, 'text_tokens': 20}}}
+        with patch.object(app, 'probe', return_value=meta), \
+             patch.object(app, 'urlopen', return_value=io.BytesIO(json.dumps(response).encode())), \
+             patch.object(app, 'save_record', side_effect=lambda record: record.update(record_file='fixture.json')):
+            result = app.analyze(b'fixture', 'qwen3.8-omni-flash', 'direct', 2., 'fixture.mp4', 'v12')
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(len(result['analysis']['interaction_points']), 2)
+
     def test_env_models_are_selectable(self):
         expected = ['qwen3-vl-plus', 'qwen3.8-flash', 'gemini-2.5-flash-lite', 'qwen3.8-omni-flash']
         self.assertEqual(list(app.MODELS), expected)
@@ -169,7 +202,7 @@ class PipelineChecks(unittest.TestCase):
 
     def test_highest_numeric_prompt_version_is_selected(self):
         path, text = app.load_prompt()
-        self.assertRegex(path.name, r'v[3-9]\d*\.txt')
+        self.assertRegex(path.name, r'v[1-9]\d*\.txt')
         self.assertIn('summary', text)
         with tempfile.TemporaryDirectory() as td:
             folder = Path(td) / 'prompts'
@@ -235,7 +268,7 @@ class PipelineChecks(unittest.TestCase):
                  patch.object(app, 'strip_audio', side_effect=lambda path, output: path), \
                  patch.object(app, 'urlopen', return_value=io.BytesIO(json.dumps(response).encode())), \
                  patch.object(app, 'save_record', side_effect=lambda record: record.update(record_file='fixture.json')):
-                return app.analyze(b'fixture', model, 'direct', 1., 'fixture.mp4')
+                return app.analyze(b'fixture', model, 'direct', 1., 'fixture.mp4', 'v6')
         video_only = {'prompt_tokens_details': {'video_tokens': 100, 'text_tokens': 20}}
         for model in ('qwen3-vl-plus', 'qwen3.8-flash', 'qwen3.8-omni-flash'):
             with self.subTest(model=model):
@@ -280,7 +313,7 @@ class PipelineChecks(unittest.TestCase):
         with patch.object(app, 'probe', return_value=meta), \
              patch.object(app, 'urlopen', return_value=io.BytesIO(json.dumps(response).encode())), \
              patch.object(app, 'save_record', side_effect=lambda record: record.update(record_file='fixture.json')):
-            result = app.analyze(b'fixture', 'qwen3.8-omni-flash', 'direct', 2., 'fixture.mp4')
+            result = app.analyze(b'fixture', 'qwen3.8-omni-flash', 'direct', 2., 'fixture.mp4', 'v6')
         self.assertEqual(result['status'], 'failed')
         self.assertEqual(result['audio_verification'], 'zero')
         self.assertIn('未确认模型收到音频', result['error'])

@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qwen3-vl-plus｜v8 与 v9 交互点</title>
+<style>
+:root{
+  --paper:#fffefb;
+  --bg:#eeede7;
+  --ink:#23362f;
+  --muted:#647269;
+  --line:#d9dfd6;
+  --accent:#a64a2f;
+  --soft:#f1f4ed;
+  --ok:#2a6248;
+  --ok-bg:#e6f0ea;
+  --fail-bg:#f8ece7;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:24px}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.75 "Microsoft YaHei","PingFang SC",sans-serif}
+a{color:inherit}
+a:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+code{font-family:Consolas,"Cascadia Mono","Source Code Pro",monospace;font-size:.86em;overflow-wrap:anywhere}
+.sheet{max-width:1120px;margin:40px auto;background:var(--paper);padding:52px 64px 36px;border-top:7px solid var(--ink)}
+.eyebrow{font-size:12px;letter-spacing:.16em;color:var(--accent);font-weight:700}
+.meta{display:flex;flex-wrap:wrap;gap:8px 18px;margin:0 0 28px;font-size:13px;color:var(--muted)}
+.meta span+span::before{content:"·";margin-right:18px;color:var(--line)}
+h1,h2,p{margin-top:0}
+h1{font:700 clamp(32px,4.6vw,48px)/1.25 "SimSun","Songti SC",serif;letter-spacing:.02em;margin:0 0 14px}
+.lead{font-size:17px;max-width:860px;margin-bottom:22px}
+nav{display:flex;flex-wrap:wrap;gap:10px 22px;margin:8px 0 0;font-size:14px}
+nav a{text-decoration:none;border-bottom:1px solid var(--line)}
+nav a:hover{color:var(--accent)}
+section{padding-top:42px}
+h2{font:700 28px/1.35 "SimSun","Songti SC",serif;margin-bottom:16px}
+h2 span{font:12px/1.4 "Microsoft YaHei",sans-serif;color:var(--accent);display:block;margin-bottom:6px;letter-spacing:.12em}
+p{margin-bottom:12px}
+.note{font-size:14px;color:var(--muted)}
+.check{background:var(--soft);padding:16px 18px;font-size:15px;margin:16px 0}
+.check p:last-child{margin:0}
+.scroll{overflow-x:auto;margin:8px 0 14px;border-top:1px solid var(--ink)}
+table{width:100%;border-collapse:collapse;font-size:14px;line-height:1.55}
+table.wide{min-width:980px}
+th,td{text-align:left;vertical-align:top;padding:11px 12px;border-bottom:1px solid var(--line)}
+th{font-size:12px;letter-spacing:.06em;color:var(--muted);font-weight:700;background:var(--paper);white-space:nowrap}
+td.clip{font-weight:700;white-space:nowrap;border-right:1px solid var(--line);background:#fafaf6;width:1%}
+tr.group td{border-top:2px solid var(--ink)}
+.tag{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.04em;padding:1px 8px;border-radius:99px;white-space:nowrap}
+.tag.ok{background:var(--ok-bg);color:var(--ok)}
+.tag.bad{background:var(--fail-bg);color:var(--accent)}
+.mono{font-variant-numeric:tabular-nums;white-space:nowrap}
+a.rec{font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;text-decoration:none;border-bottom:1px solid var(--line)}
+a.rec:hover{color:var(--accent)}
+footer{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px;margin-top:36px}
+@media(max-width:760px){
+  .sheet{margin:0;padding:28px 18px;border-top-width:5px}
+  section{padding-top:32px}
+  h1{font-size:30px}
+}
+@media print{
+  @page{size:A4 landscape;margin:12mm}
+  body{background:white;font-size:10pt;line-height:1.5}
+  .sheet{max-width:none;margin:0;padding:0;border-top-width:4px}
+  nav{display:none}
+  h1{font-size:20pt}
+  section{padding-top:16px}
+  h2{font-size:15pt;break-after:avoid}
+  .check{break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  table.wide{min-width:0;font-size:8.5pt}
+  a{text-decoration:none}
+}
+</style>
+</head>
+<body>
+<div class="sheet">
+<header>
+  <p class="meta"><span class="eyebrow">DAY 2 · qwen3-vl-plus</span></p>
+  <h1>v8 与 v9 交互点处理结果</h1>
+  <p class="lead">截至 2026-10-20，保存了 <code>qwen3-vl-plus</code> 使用提示词 <a href="../prompts/v8.txt">v8</a> 的 6 次调用和 <a href="../prompts/v9.txt">v9</a> 的 6 次调用。v8 在篮球 S05 的三种输入设置下都给出第二次投篮前候选，在乒乓球 S06 的三种设置下都返回空候选；v9 在 S05 的 4 次调用中都有候选，但曾把第一次准备错接到第二次动作，在 S06 的 2 次调用中原文有候选、却都未通过本地校验。</p>
+  <p class="meta">
+    <span>截至 2026-10-20</span>
+    <span>v8 六次 · v9 六次</span>
+    <span>本节只评价画面</span>
+  </p>
+  <nav aria-label="报告目录">
+    <a href="#input">输入与人工基准</a>
+    <a href="#v8">v8 原始结果</a>
+    <a href="#v9">v9 原始结果</a>
+    <a href="#end">结论</a>
+  </nav>
+</header>
+
+<main>
+<section id="input">
+  <h2><span>01 / INPUT</span>输入与人工基准</h2>
+  <div class="scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>素材</th>
+        <th>实验文件 SHA-256</th>
+        <th>回看基准</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="clip"><a href="../mp4-example/S05_传球投篮.mp4">S05 传球投篮</a></td>
+        <td><code>99412E694D7335B0DB892A8BCFF9601AB578029A8A8B33A6C5AD9575CAC85416</code></td>
+        <td>第一次举球准备约 4.25–5.75 秒、球离手约 6.0–6.25 秒；第二次准备约 10.75–12.0 秒、球离手约 12.25–12.5 秒。无法据此确认投中。<a href="archive/source-and-annotation.md">调用前标注</a></td>
+      </tr>
+      <tr>
+        <td class="clip"><a href="../mp4-example/S06_有声乒乓球.mp4">S06 有声乒乓球</a></td>
+        <td><code>5F05ECC816D320BC1C52A4412BDB3CD6AC71ACE36939A6CEF6335F719F2DFBE6</code></td>
+        <td>事前标注约 8.75–9.50 秒可见准备、约 9.75–10.25 秒动作开始；用户后续另认可约 1.5、19.5 秒位置可玩，但未认可模型对这些位置的具体姿态或球路描写。<a href="archive/omni-source-annotation.md">声画标注</a></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="check">
+    <p>S06 原文件有音轨，但本 Demo 给 <code>qwen3-vl-plus</code> 的直传请求发送去音轨副本；抽帧也没有声音。因此本节只评价画面。</p>
+    <p>v8 的“顺序抽帧 1 fps”“直传 1 fps”“顺序抽帧 2 fps”各只有一次，<strong>不是同一条件下的三次重复</strong>。v9 的主要重复组是直传 1 fps；另有一条直传 2 fps 的 S05 记录，单列而不混入该组。</p>
+  </div>
+</section>
+
+<section id="v8">
+  <h2><span>02 / V8</span>v8 原始结果</h2>
+  <p class="note">每格的事件数和候选均来自所链接的原始 JSON。“空”是模型成功返回 <code>interaction_points=[]</code>。</p>
+  <div class="scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>输入条件</th>
+        <th>S05 篮球</th>
+        <th>S06 乒乓球</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="clip">顺序抽帧 1 fps</td>
+        <td><a href="../results/qwen3-vl-plus/S05_传球投篮__frames__20261020T115326000885__d990e2d2.json">8 事件；11.0→12.0 秒</a></td>
+        <td><a href="../results/qwen3-vl-plus/S06_有声乒乓球__frames__20261020T113947447292__f4060b56.json">5 事件；空</a></td>
+      </tr>
+      <tr>
+        <td class="clip">直接视频 1 fps</td>
+        <td><a href="../results/qwen3-vl-plus/S05_传球投篮__direct__20261020T115443803434__37c658ef.json">6 事件；11.8→12.5 秒</a></td>
+        <td><a href="../results/qwen3-vl-plus/S06_有声乒乓球__direct__20261020T114338469527__f56af4ee.json">6 事件；空</a></td>
+      </tr>
+      <tr>
+        <td class="clip">顺序抽帧 2 fps</td>
+        <td><a href="../results/qwen3-vl-plus/S05_传球投篮__frames__20261020T115609253838__a2037edc.json">11 事件；11.5→12.5 秒</a></td>
+        <td><a href="../results/qwen3-vl-plus/S06_有声乒乓球__frames__20261020T114647943579__37e4d8c8.json">8 事件；空</a></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p>S05 三个暂停时间都在第二次投篮的人工准备窗口内，但第一条把动作开始估为 12.0 秒，略早于标注。更严重的是，前两条断言未获画面确认的进球，并给出视频不支持的假动作或传球分支；第三条也有与时间画面不符的球位描述。S06 三次均为空，不能据此认定原片没有可玩时刻。</p>
+</section>
+
+<section id="v9">
+  <h2><span>03 / V9</span>v9 原始结果</h2>
+  <p class="note">下表覆盖全部 6 次 v9 记录。<span class="tag ok">成功</span> 仅表示请求与本地结构校验通过；失败记录仍保存完整 <code>raw_text</code> 和用量。</p>
+  <div class="scroll">
+  <table class="wide">
+    <thead>
+      <tr>
+        <th>素材与条件</th>
+        <th>状态</th>
+        <th>暂停 → 动作开始</th>
+        <th>画面复核</th>
+        <th>原始 JSON</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>S05，直传 2 fps，单次</td>
+        <td><span class="tag ok">成功</span></td>
+        <td class="mono">11.5→12.8 秒</td>
+        <td>暂停位于第二次准备窗口；动作起点比离手标注略晚，原文还误称第二次入网。此条与 1 fps 组条件不同。</td>
+        <td><a class="rec" href="../results/qwen3-vl-plus/S05_传球投篮__direct__20261020T151951017276__bf520f85.json">bf520f85</a></td>
+      </tr>
+      <tr class="group">
+        <td>S05，直传 1 fps，第 1 次</td>
+        <td><span class="tag ok">成功</span></td>
+        <td class="mono">5.5→10.0 秒</td>
+        <td>把第一次举球误写为未出手，又把第二次行动接到第一次准备；事件对应关系错误。</td>
+        <td><a class="rec" href="../results/qwen3-vl-plus/S05_传球投篮__direct__20261020T153540763175__6513e095.json">6513e095</a></td>
+      </tr>
+      <tr>
+        <td>S05，直传 1 fps，第 2 次</td>
+        <td><span class="tag ok">成功</span></td>
+        <td class="mono">10.5→12.5 秒</td>
+        <td>10.5 秒对球位和举臂程度描述过早；原文误称第一次未出手、第二次已进球。</td>
+        <td><a class="rec" href="../results/qwen3-vl-plus/S05_传球投篮__direct__20261020T154104757224__01934787.json">01934787</a></td>
+      </tr>
+      <tr>
+        <td>S05，直传 1 fps，第 3 次</td>
+        <td><span class="tag ok">成功</span></td>
+        <td class="mono">11.5→12.5 秒</td>
+        <td>暂停时持球举起可见，位置较合理；肘腕细节和得分仍说得过满。</td>
+        <td><a class="rec" href="../results/qwen3-vl-plus/S05_传球投篮__direct__20261020T154203828783__7c652b25.json">7c652b25</a></td>
+      </tr>
+      <tr class="group">
+        <td>S06，直传 1 fps，第 1 次</td>
+        <td><span class="tag bad">失败</span></td>
+        <td>原文 17.0→<code>null</code>，<code>action_observed=false</code></td>
+        <td>原文有点但未按本地约定在依据和不确定性中明确标注后续行动未拍到；17 秒“黑白文字衫持拍蓄力”也与画面不符。<strong>不是空候选。</strong></td>
+        <td><a class="rec" href="../results/qwen3-vl-plus/S06_有声乒乓球__direct__20261020T154316922643__fb5994de.json">fb5994de</a></td>
+      </tr>
+      <tr>
+        <td>S06，直传 1 fps，第 2 次</td>
+        <td><span class="tag bad">失败</span></td>
+        <td>原文 12.5→<code>null</code>，<code>action_observed=false</code></td>
+        <td>同样未通过字段校验；12.5 秒所述赤膊者稳定持拍姿态不符，原文又称随后约 14.5 秒挥拍，与“未观察到后续行动”自相矛盾。<strong>不是空候选。</strong></td>
+        <td><a class="rec" href="../results/qwen3-vl-plus/S06_有声乒乓球__direct__20261020T154430100692__09bfa12b.json">09bfa12b</a></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="end">
+  <h2><span>04 / CONCLUSION</span>结论</h2>
+  <div class="scroll">
+  <table class="wide">
+    <thead>
+      <tr>
+        <th>可比范围</th>
+        <th>v8</th>
+        <th>v9</th>
+        <th>能得出的判断</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="clip">S05，直传 1 fps</td>
+        <td>1/1 有候选，11.8→12.5 秒</td>
+        <td>3/3 有候选，但一次错接不同行动；另一次暂停线索过早</td>
+        <td>v9 <strong>没有</strong>证明比 v8 更可靠；两版均有事实编造。</td>
+      </tr>
+      <tr>
+        <td class="clip">S06，直传 1 fps</td>
+        <td>1/1 成功返回空数组</td>
+        <td>2/2 原文有候选，但 0/2 通过校验且画面线索失实</td>
+        <td>不能把 v9 失败计作空候选，也不能因原文出现打点就宣称召回改善。</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p>跨抽帧/直传、跨 fps 的结果只能作探索，不合并计算稳定率。现有记录没有 <code>qwen3-vl-plus</code> 的 v8/v9 空镜负样本组，因此不能据此评价该模型在这两版上的误报率。下一步应先修正主体、准备、执行三者的时间对应，并核查每条可见线索，再谈增加候选数。</p>
+</section>
+</main>
+
+<footer>
+  <span>对应原文 day2/qwen3-vl-plus-v8-v9-交互点处理.md</span>
+  <span>2026-10-20 · qwen3-vl-plus · v8 六次 · v9 六次</span>
+</footer>
+</div>
+</body>
+</html>

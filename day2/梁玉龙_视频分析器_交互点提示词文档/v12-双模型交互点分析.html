@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v12 双模型交互点分析</title>
+<style>
+:root{
+  --paper:#fffefb;
+  --bg:#eeede7;
+  --ink:#23362f;
+  --muted:#647269;
+  --line:#d9dfd6;
+  --accent:#a64a2f;
+  --soft:#f1f4ed;
+  --ok:#2a6248;
+  --ok-bg:#e6f0ea;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:24px}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.75 "Microsoft YaHei","PingFang SC",sans-serif}
+a{color:inherit}
+a:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+code{font-family:Consolas,"Cascadia Mono","Source Code Pro",monospace;font-size:.86em;overflow-wrap:anywhere}
+.sheet{max-width:1120px;margin:40px auto;background:var(--paper);padding:52px 64px 36px;border-top:7px solid var(--ink)}
+.eyebrow{font-size:12px;letter-spacing:.16em;color:var(--accent);font-weight:700}
+.meta{display:flex;flex-wrap:wrap;gap:8px 18px;margin:0 0 28px;font-size:13px;color:var(--muted)}
+.meta span+span::before{content:"·";margin-right:18px;color:var(--line)}
+h1,h2,h3,p{margin-top:0}
+h1{font:700 clamp(32px,4.6vw,48px)/1.25 "SimSun","Songti SC",serif;letter-spacing:.02em;margin:0 0 14px}
+.lead{font-size:17px;max-width:860px;margin-bottom:22px}
+nav{display:flex;flex-wrap:wrap;gap:10px 22px;margin:8px 0 0;font-size:14px}
+nav a{text-decoration:none;border-bottom:1px solid var(--line)}
+nav a:hover{color:var(--accent)}
+section{padding-top:42px}
+h2{font:700 28px/1.35 "SimSun","Songti SC",serif;margin-bottom:16px}
+h2 span{font:12px/1.4 "Microsoft YaHei",sans-serif;color:var(--accent);display:block;margin-bottom:6px;letter-spacing:.12em}
+h3{font-size:18px;margin:26px 0 8px}
+p{margin-bottom:12px}
+.check{background:var(--soft);padding:16px 18px;font-size:15px;margin:16px 0}
+.check p:last-child{margin:0}
+.scroll{overflow-x:auto;margin:8px 0 14px;border-top:1px solid var(--ink)}
+table{width:100%;border-collapse:collapse;font-size:14px;line-height:1.55}
+table.wide{min-width:1040px}
+th,td{text-align:left;vertical-align:top;padding:11px 12px;border-bottom:1px solid var(--line)}
+th{font-size:12px;letter-spacing:.06em;color:var(--muted);font-weight:700;background:var(--paper);white-space:nowrap}
+td.clip{font-weight:700;white-space:nowrap;border-right:1px solid var(--line);background:#fafaf6;width:1%}
+tr.group td{border-top:2px solid var(--ink)}
+.tag{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.04em;padding:1px 8px;border-radius:99px;white-space:nowrap;background:var(--ok-bg);color:var(--ok)}
+.mono{font-variant-numeric:tabular-nums;white-space:nowrap}
+ol.notes{margin:8px 0 16px;padding-left:22px}
+ol.notes li+li{margin-top:8px}
+footer{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px;margin-top:36px}
+@media(max-width:760px){
+  .sheet{margin:0;padding:28px 18px;border-top-width:5px}
+  section{padding-top:32px}
+  h1{font-size:30px}
+}
+@media print{
+  @page{size:A4 landscape;margin:12mm}
+  body{background:white;font-size:10pt;line-height:1.5}
+  .sheet{max-width:none;margin:0;padding:0;border-top-width:4px}
+  nav{display:none}
+  h1{font-size:20pt}
+  section{padding-top:16px}
+  h2,h3{break-after:avoid}
+  h2{font-size:15pt}
+  .check{break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  table.wide{min-width:0;font-size:8.5pt}
+  a{text-decoration:none}
+}
+</style>
+</head>
+<body>
+<div class="sheet">
+<header>
+  <p class="meta"><span class="eyebrow">DAY 2 · v12</span></p>
+  <h1>双模型交互点分析</h1>
+  <p class="lead">记录日期 2026-10-21。分析范围仅为 <code>results/qwen3.8-omni-flash/v12/</code> 与 <code>results/qwen3-vl-plus/v12/</code> 中的原始 JSON：S05、S06、S07 各由两个模型运行一次。六份记录均保存了实际提示词、输入参数、模型原文和用量；保存的 v12 提示词正文一致，当前 <a href="../prompts/v12.txt">v12.txt</a> 与记录中的正文一致（文件末尾换行除外）。本报告没有新增模型调用。</p>
+  <p class="meta">
+    <span>2026-10-21</span>
+    <span>Omni 直传 · VL Plus 抽帧</span>
+    <span>每视频各 1 次</span>
+  </p>
+  <nav aria-label="报告目录">
+    <a href="#input">输入与判读边界</a>
+    <a href="#runs">六次调用</a>
+    <a href="#review">按视频复核</a>
+    <a href="#notes">作者复盘</a>
+  </nav>
+</header>
+
+<main>
+<section id="input">
+  <h2><span>01 / INPUT</span>输入与判读边界</h2>
+  <div class="scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>项目</th>
+        <th>qwen3.8-omni-flash</th>
+        <th>qwen3-vl-plus</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="clip">输入方式</td>
+        <td>直接视频，<code>fps=1</code>，请求 JSON Object 格式</td>
+        <td>顺序抽帧，<code>fps=1</code>，请求未指定 JSON Object 格式</td>
+      </tr>
+      <tr>
+        <td class="clip">视频信息</td>
+        <td>S05 无音轨；S06、S07 发送有声 MP4</td>
+        <td>只送画面帧，三个视频均未送音频</td>
+      </tr>
+      <tr>
+        <td class="clip">音频 Token</td>
+        <td>S05：0；S06：156；S07：408</td>
+        <td>三个视频均为 0</td>
+      </tr>
+      <tr>
+        <td class="clip">运行次数</td>
+        <td>每个视频 1 次</td>
+        <td>每个视频 1 次</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="runs">
+  <h2><span>02 / RUNS</span>六次调用的原始结果</h2>
+  <div class="scroll">
+  <table class="wide">
+    <thead>
+      <tr>
+        <th>素材</th>
+        <th>模型与输入</th>
+        <th>状态；事件数</th>
+        <th>候选数与时间（秒）</th>
+        <th>本轮主要观察</th>
+        <th>原始记录</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="clip" rowspan="2">S05 传球投篮</td>
+        <td>Omni，直传</td>
+        <td class="mono"><span class="tag">成功</span>；4</td>
+        <td>4 个：1.5、4.5、8.5、12.5</td>
+        <td>给出接球、传球、接球、投篮等多次参与建议；其中 4.5 秒的“传球”理由与回看画面中的举球投篮不符。</td>
+        <td><a href="../results/qwen3.8-omni-flash/v12/S05_传球投篮__direct__20261021T094530834517__02d4425a.json">Omni S05</a></td>
+      </tr>
+      <tr>
+        <td>VL Plus，抽帧</td>
+        <td class="mono"><span class="tag">成功</span>；4</td>
+        <td>3 个：4.5、10.5、12.5</td>
+        <td>4.5 秒建议“接球”，但画面里前景人物已经持球举起；原文还断言第二次投篮“入筐”，超出已有逐帧核实结论。</td>
+        <td><a href="../results/qwen3-vl-plus/v12/S05_传球投篮__frames__20261021T094049561692__0f00489e.json">VL S05</a></td>
+      </tr>
+      <tr class="group">
+        <td class="clip" rowspan="2">S06 有声乒乓球</td>
+        <td>Omni，直传</td>
+        <td class="mono"><span class="tag">成功</span>；4</td>
+        <td>2 个：6.5、9.0</td>
+        <td>给出击球和捡球两种机会；9 秒“走向球桌准备捡球”的行动判断需复核，不能仅因人物靠近球台就当成已观察到捡球。</td>
+        <td><a href="../results/qwen3.8-omni-flash/v12/S06_有声乒乓球__direct__20261021T094825941182__16adaef9.json">Omni S06</a></td>
+      </tr>
+      <tr>
+        <td>VL Plus，抽帧</td>
+        <td class="mono"><span class="tag">成功</span>；5</td>
+        <td>4 个：4.5、9.0、14.0、18.5</td>
+        <td>从击球扩展到选角色、选拍具、探索环境；14 秒的“更换拍具”、18.5 秒的“隐藏物品”更像设计联想，不能直接当作视频事实。</td>
+        <td><a href="../results/qwen3-vl-plus/v12/S06_有声乒乓球__frames__20261021T094148317872__7800d1ee.json">VL S06</a></td>
+      </tr>
+      <tr class="group">
+        <td class="clip" rowspan="2">S07 篮球比赛前 58 秒</td>
+        <td>Omni，直传</td>
+        <td class="mono"><span class="tag">成功</span>；6</td>
+        <td>5 个：1.5、13、34、49、54</td>
+        <td>涵盖比赛操作与暂停战术；1.5 秒理由称“黑队球员跃起准备投篮”，与开场画面不符。</td>
+        <td><a href="../results/qwen3.8-omni-flash/v12/S07_篮球比赛_前58秒__direct__20261021T094929667922__1e1e3bb1.json">Omni S07</a></td>
+      </tr>
+      <tr>
+        <td>VL Plus，抽帧</td>
+        <td class="mono"><span class="tag">成功</span>；15</td>
+        <td>5 个：1.5、12.5、24.5、42.5、54.5</td>
+        <td>事件拆分更细，多个理由借用了画面字幕；首条事件却误称 0–1 秒“黑队围圈”，实际开场为比赛画面。</td>
+        <td><a href="../results/qwen3-vl-plus/v12/S07_篮球比赛_前58秒__frames__20261021T094320279491__4a80f591.json">VL S07</a></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="check">
+    <p>合计：<strong>6/6 次调用成功，6/6 次返回非空候选，共 23 个候选</strong>（Omni 11 个、VL Plus 12 个）。这证明 v12 在这三段运动素材上能够让模型提出多个可讨论的位置；<strong>不证明 23 个点都可用</strong>，也不能推断其对空镜或其他题材的误报率。</p>
+  </div>
+</section>
+
+<section id="review">
+  <h2><span>03 / REVIEW</span>按视频复核</h2>
+
+  <h3>S05：同为 4.5 秒，建议动作也可能不一致</h3>
+  <p>既有<a href="archive/source-and-annotation.md">人工逐帧标注</a>将约 4.25–5.75 秒记为前景人物第一次举球投篮的准备阶段；<a href="eval/v9/evidence/S05_4.5.png">4.5 秒画面</a>可见其已将篮球举至头上。因而，4.5 秒作为“参与投篮”的位置值得讨论，但 Omni 把它说成“准备传球”，VL Plus 把它说成“准备接球”，都没有准确连接到当下可见的持球动作。VL Plus 还在事件中写出第二次“球出手并入筐”；既有标注只确认球到篮筐附近后向右运动，<strong>不能据此确认进球</strong>。两模型均给出 12.5 秒候选，说明它们都注意到后段投篮，却不能用时间重合替代对球位、动作阶段和结果的回看。</p>
+
+  <h3>S06：同为 9 秒，交互内容并不一致</h3>
+  <p>Omni 在 9 秒建议“捡拾桌上的乒乓球”；VL Plus 在 9 秒建议“执行一次击球”。<a href="archive/omni-source-annotation.md">原先冻结的声画标注</a>把约 8.75–9.50 秒视作红格衬衫持拍准备、约 9.75–10.25 秒进入挥拍/击球；<a href="eval/v9/evidence/S06_9.5.png">9.5 秒画面</a>也可见红格衬衫人物在球台边持拍。因此，这一带确有值得回看的玩家参与机会，但 <strong>Omni 的“准备捡球”不能因时间落在附近就自动成立</strong>。VL Plus 的 14 秒“选择纸板、书本、木片”与 18.5 秒“发现隐藏物品”是可能的玩法构思，而非已被视频证明的道具更换或隐藏物品。Omni 收到音频且音频 Token 为正数；两条候选理由却主要诉诸画面动作，不能仅凭 Token 数宣称声音改善了打点。</p>
+
+  <h3>S07：字幕可启发交互，但不能冒充动作事实</h3>
+  <p><a href="eval/s07/evidence/frame_0.5.png">开场 0.5 秒画面</a>已经是红队持球、黑队防守的比赛过程。Omni 的 1.5 秒理由写成“黑队球员高高跃起准备投篮”，VL Plus 的首条事件写成“黑队围圈击掌”，都与该开场片段不符；两模型同在 1.5 秒给点，不代表识别出同一个真实事件。约 12–13 秒和 32–40 秒的暂停/围圈画面为战术选择类交互提供了画面背景；后段传球、突破建议仍需逐点对照持球人和切镜。VL Plus 的 15 条事件多次逐条复述字幕，不能把“23 联防”“传球困难”等字幕评价都提升为模型独立观察到的战术事实。此前<a href="eval/s07/report.md">对同一 S07 裁片的逐帧检查</a>也记录过开场事件和 56 秒主体错配，本轮不应忽略这种反复出现的识别风险。</p>
+</section>
+
+<section id="notes">
+  <h2><span>04 / NOTES</span>作者复盘和思想</h2>
+  <ol class="notes">
+    <li>在前序对 AI 提示词中加以限制的情况（如证据、后续事件发展等等）会导致大大减少交互点的产生，甚至没有。</li>
+    <li>视频识别过程中存在 AI 识别问题是模型问题。若增加提示词限制，会影响交互点的产生，可以人工 / 外接 AI 来选择使用哪个交互点做后续的 game。</li>
+    <li>时间上精确时间是无法保证的，存在 0.5s&lt; 的误差（AI 模型问题），没有影响。</li>
+    <li>不同的 AI 模型对于交互点后续的交互内容是不一致的，但是能找到相同的交互点。</li>
+  </ol>
+  <div class="check">
+    <p><strong>思考：</strong>找到交互点和交互点后续的游戏选择是否用不同的 AI，可以尝试。</p>
+  </div>
+</section>
+</main>
+
+<footer>
+  <span>对应原文 day2/v12-双模型交互点分析.md</span>
+  <span>2026-10-21 · 未新增模型调用</span>
+</footer>
+</div>
+</body>
+</html>

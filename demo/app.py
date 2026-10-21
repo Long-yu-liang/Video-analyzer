@@ -335,6 +335,37 @@ def validate(text, duration, audio, require_interaction_points=False, require_po
     return result
 
 
+def validate_open_interactions(text, duration):
+    """v12: validate the clickable structure without judging which moments are interactive."""
+    result = json.loads(text)
+    if not isinstance(result, dict) or not isinstance(result.get('summary'), str):
+        raise ValueError('模型输出缺少 summary。')
+    events, points = result.get('events'), result.get('interaction_points')
+    if not isinstance(events, list) or not isinstance(points, list):
+        raise ValueError('模型输出 events / interaction_points 格式不正确。')
+
+    def in_video(value):
+        return type(value) in (int, float) and math.isfinite(value) and 0 <= value <= duration
+
+    for event in events:
+        if (not isinstance(event, dict) or not in_video(event.get('start_s'))
+                or not in_video(event.get('end_s')) or event['end_s'] < event['start_s']
+                or not isinstance(event.get('description'), str) or not event['description'].strip()):
+            raise ValueError('事件需要片内起止时间和描述。')
+    for point in points:
+        if (not isinstance(point, dict) or not in_video(point.get('time_s'))
+                or not isinstance(point.get('opportunity'), str) or not point['opportunity'].strip()
+                or not isinstance(point.get('reason'), str) or not point['reason'].strip()):
+            raise ValueError('交互点需要片内时间、机会描述和理由。')
+    limitations = result.get('limitations', [])
+    if not isinstance(limitations, list) or not all(isinstance(x, str) for x in limitations):
+        raise ValueError('limitations 必须为字符串数组。')
+    result['limitations'] = limitations
+    result['events'] = sorted(events, key=lambda item: item['start_s'])
+    result['interaction_points'] = sorted(points, key=lambda item: item['time_s'])
+    return result
+
+
 def save_record(record):
     model = record['model']
     if not re.fullmatch(r'[A-Za-z0-9._-]{1,80}', model):
@@ -392,7 +423,7 @@ def analyze(raw, model, mode, fps, video_name, prompt_version=None):
             api_start = time.perf_counter()
             try:
                 record['api_attempts'].append({'response_format': body.get('response_format')})
-                with urlopen(Request(url, data=payload, headers=headers), timeout=180) as response:
+                with urlopen(Request(url, data=payload, headers=headers), timeout=300) as response:
                     result = json.load(response)
             except HTTPError as error:
                 detail = error.read().decode('utf-8', errors='replace')[:2000]
@@ -408,7 +439,7 @@ def analyze(raw, model, mode, fps, video_name, prompt_version=None):
                 record['request_options']['response_format'] = None
                 record['json_mode_fallback'] = True
                 record['api_attempts'].append({'response_format': None})
-                with urlopen(Request(url, data=payload, headers=headers), timeout=180) as response:
+                with urlopen(Request(url, data=payload, headers=headers), timeout=300) as response:
                     result = json.load(response)
             record['api_roundtrip_s'] = round(time.perf_counter()-api_start, 3)
             record['raw_response'] = result
@@ -436,11 +467,14 @@ def analyze(raw, model, mode, fps, video_name, prompt_version=None):
             audio_confirmed = audio_requested and record['audio_tokens'] is not None and record['audio_tokens'] > 0
             prompt_version = int(prompt_path.stem[1:])
             day2_prompt = prompt_version >= 3
-            record['analysis'] = validate(extract_json(output), metadata['duration_s'], audio_confirmed,
-                                          require_interaction_points=day2_prompt,
-                                          require_point_source=prompt_version >= 6,
-                                          max_points=1 if prompt_version >= 7 else 2,
-                                          require_action_observed=prompt_version >= 9)
+            if prompt_version == 12:
+                record['analysis'] = validate_open_interactions(extract_json(output), metadata['duration_s'])
+            else:
+                record['analysis'] = validate(extract_json(output), metadata['duration_s'], audio_confirmed,
+                                              require_interaction_points=day2_prompt,
+                                              require_point_source=prompt_version >= 6,
+                                              max_points=1 if prompt_version >= 7 else 2,
+                                              require_action_observed=prompt_version >= 9)
             if mode == 'direct' and modalities is None:
                 record['analysis']['limitations'].append('服务未返回模态用量明细，无法确认视频是否进入模型，请回看原片核实。')
             if record['finish_reason'] not in ('stop', 'STOP'):
