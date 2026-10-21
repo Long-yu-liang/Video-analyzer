@@ -66,6 +66,26 @@ class TwoStageChecks(unittest.TestCase):
         self.assertEqual(body['messages'][0]['content'][1]['fps'], 2.)
         self.assertNotIn('interaction_points', body['messages'][0]['content'][0]['text'])
 
+    def test_event_step_uses_selected_model_sampling_and_frames(self):
+        meta = {'duration_s': 3, 'width': 320, 'height': 240, 'has_audio': True}
+        frames = [{'time_s': 0., 'data': base64.b64encode(b'frame').decode()}]
+        answer = {'summary': '传接球', 'events': [self.event()], 'limitations': []}
+        with patch.object(app, 'probe', return_value=meta), \
+             patch.object(app, 'extract', return_value=frames) as extracted, \
+             patch.object(app, 'strip_audio') as stripped, \
+             patch.object(app, 'urlopen', return_value=completion(answer)) as request, \
+             patch.object(app, 'save_record', side_effect=lambda record: record.update(record_file='fixture.json')):
+            result = app.analyze_events(b'fixture', 'clip.mp4', 'v13', 'gemini-2.5-flash-lite', 'frames', 1.)
+        stripped.assert_not_called()
+        extracted.assert_called_once()
+        self.assertEqual(result['model'], 'gemini-2.5-flash-lite')
+        self.assertEqual(result['mode'], 'frames')
+        self.assertEqual(result['fps'], 1.)
+        self.assertFalse(result['sent_audio'])
+        body = json.loads(request.call_args.args[0].data)
+        self.assertEqual(body['model'], 'gemini-2.5-flash-lite')
+        self.assertEqual(sum(part['type'] == 'image_url' for part in body['messages'][0]['content']), 1)
+
     def test_second_call_maps_nearest_frame_and_keeps_first_record(self):
         raw = b'fixture'
         parent = {'record_id': 'a' * 32, 'stage': 'events', 'status': 'success',

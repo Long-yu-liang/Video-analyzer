@@ -382,16 +382,41 @@ def save_record(record):
     return path
 
 
-def load_stage_prompt(stage, version='v13'):
-    if stage not in ('events', 'opportunities'):
-        raise ValueError('无效的两阶段提示词。')
-    if version not in ('v13', 'v14') or (version == 'v14' and stage != 'events'):
-        raise ValueError('两阶段提示词版本无效。')
-    path = ROOT / 'prompts' / version / f'{stage}.txt'
+def stage_prompt_paths(stage):
+    if stage not in ('events', 'opportunities', 'gameplay'):
+        raise ValueError('无效的阶段提示词。')
+    paths = [path for path in (ROOT / 'prompts').glob(f'v*/{stage}.txt')
+             if path.is_file() and re.fullmatch(r'v[1-9]\d*', path.parent.name)]
+    return sorted(paths, key=lambda path: int(path.parent.name[1:]))
+
+
+def load_stage_prompt(stage, version=None):
+    paths = stage_prompt_paths(stage)
+    if not paths:
+        raise ValueError(f'没有{stage}提示词。')
+    if version is None:
+        path = paths[-1]
+    else:
+        if not isinstance(version, str) or not re.fullmatch(r'v[1-9]\d*', version):
+            raise ValueError('提示词版本格式无效。')
+        matching = [item for item in paths if item.parent.name == version]
+        if not matching:
+            raise ValueError('提示词版本不存在。')
+        path = matching[0]
     prompt = path.read_text(encoding='utf-8').strip()
     if not prompt:
         raise ValueError(f'{path.name} 是空文件。')
     return path, prompt
+
+
+def stage_prompt_catalog():
+    catalog = {}
+    for stage in ('events', 'opportunities', 'gameplay'):
+        catalog[stage] = [{'version': path.parent.name,
+                           'path': f'prompts/{path.parent.name}/{path.name}',
+                           'content': path.read_text(encoding='utf-8').strip()}
+                          for path in stage_prompt_paths(stage)]
+    return catalog
 
 
 class TruncatedOutputError(ValueError):
@@ -489,17 +514,36 @@ def call_v13_model(url, body, key, record):
     return extract_json(output)
 
 
+def saved_record_paths(record_id, folder=None):
+    if not re.fullmatch(r'[0-9a-f]{32}', record_id or ''):
+        raise ValueError('记录 ID 无效。')
+    folder = Path(folder) if folder else ROOT / 'results'
+    return sorted(path for path in folder.rglob(f'*__{record_id}.json') if path.is_file())
+
+
 def stage_record(record_id):
     if not re.fullmatch(r'[0-9a-f]{32}', record_id or ''):
         raise ValueError('事件记录 ID 无效。')
-    folder = ROOT / 'results' / 'qwen3-vl-plus'
-    matches = list(folder.glob(f'*__{record_id}.json'))
+    matches = saved_record_paths(record_id)
     if len(matches) != 1:
-        raise ValueError('事件记录不存在。')
+        raise ValueError('事件记录不存在。' if not matches else '记录 ID 对应多个文件。')
     record = json.loads(matches[0].read_text(encoding='utf-8'))
     if record.get('record_id') != record_id or record.get('stage') != 'events' or record.get('status') != 'success':
         raise ValueError('事件记录不可用于第二阶段。')
-    record['record_file'] = f'results/qwen3-vl-plus/{matches[0].name}'
+    record['record_file'] = matches[0].relative_to(ROOT).as_posix()
+    return record
+
+
+def load_stage_result(record_id, stage, label):
+    if not re.fullmatch(r'[0-9a-f]{32}', record_id or ''):
+        raise ValueError(f'{label} ID 无效。')
+    matches = saved_record_paths(record_id)
+    if len(matches) != 1:
+        raise ValueError(f'{label}不存在。' if not matches else '记录 ID 对应多个文件。')
+    record = json.loads(matches[0].read_text(encoding='utf-8'))
+    if record.get('record_id') != record_id or record.get('stage') != stage or record.get('status') != 'success':
+        raise ValueError(f'{label}不可用。')
+    record['record_file'] = matches[0].relative_to(ROOT).as_posix()
     return record
 
 
@@ -532,14 +576,23 @@ def analyze_segment(path, folder, core_start, core_end, clip_start, clip_end,
     clip_video(path, clip, clip_start, clip_end)
     metadata = probe(clip)
     data = base64.b64encode(clip.read_bytes()).decode()
+    model = parent.get('model') or 'qwen3-vl-plus'
+    mode = parent.get('mode') or 'direct'
+    fps = parent.get('fps') or 2.
     segment = {'core_start_s': core_start, 'core_end_s': core_end,
                'clip_start_s': clip_start, 'clip_end_s': clip_end,
                'clip_sha256': hashlib.sha256(clip.read_bytes()).hexdigest(),
                'sent_video_bytes': clip.stat().st_size, 'sent_audio': False,
-               'metadata': metadata, 'fps': 2., 'status': 'failed'}
+               'metadata': metadata, 'fps': fps, 'status': 'failed'}
     parent['segments'].append(segment)
     try:
-        url, body, _ = build_request('qwen3-vl-plus', 'direct', 2., data, [], metadata, prompt)
+        if mode == 'frames':
+            frame_dir = folder / f'frames-{len(parent["segments"])}'
+            frame_dir.mkdir()
+            frames = extract(clip, frame_dir, metadata['duration_s'], fps)
+            url, body, _ = build_request(model, 'frames', fps, '', frames, metadata, prompt)
+        else:
+            url, body, _ = build_request(model, 'direct', fps, data, [], metadata, prompt)
         segment['actual_prompt'] = body['messages'][0]['content'][0]['text']
         output = call_v13_model(url, body, key, segment)
         analysis = validate_stage_events(output, metadata['duration_s'])
@@ -623,10 +676,9 @@ def analyze_events_segmented(path, folder, metadata, prompt, key, record):
     record['status'] = 'success'
 
 
-def analyze_events(raw, video_name, version='v13'):
-    model = 'qwen3-vl-plus'
-    if model not in MODELS:
-        raise ValueError('请先在 BEEROUTE_MODELS 配置 qwen3-vl-plus。')
+def analyze_events(raw, video_name, version='v13', model='qwen3-vl-plus', mode='direct', fps=2.):
+    if model not in MODELS or mode not in ('direct', 'frames') or fps not in (0.5, 1., 2.):
+        raise ValueError('无效的模型、输入方式或采样率。请在页面上选择 .env 里配置的模型。')
     key = os.environ.get('BEEROUTE_API_KEY')
     if not key:
         raise ValueError('尚未配置 BEEROUTE_API_KEY。')
@@ -635,7 +687,7 @@ def analyze_events(raw, video_name, version='v13'):
     prompt_path, prompt = load_stage_prompt('events', version)
     started = time.perf_counter()
     record = {'record_id': secrets.token_hex(16), 'stage': 'events', 'created_at': datetime.now(timezone.utc).isoformat(),
-              'model': model, 'mode': 'direct', 'fps': 2., 'video_name': Path(video_name).name,
+              'model': model, 'mode': mode, 'fps': fps, 'video_name': Path(video_name).name,
               'video_sha256': hashlib.sha256(raw).hexdigest(), 'video_bytes': len(raw),
               'prompt_file': f'prompts/{version}/{prompt_path.name}', 'prompt': prompt, 'status': 'failed'}
     try:
@@ -649,12 +701,21 @@ def analyze_events(raw, video_name, version='v13'):
                 record['sent_audio'] = False
                 record['preprocess_s'] = round(time.perf_counter() - started, 3)
                 analyze_events_segmented(path, folder, metadata, prompt, key, record)
+            elif mode == 'frames':
+                frames = extract(path, folder, metadata['duration_s'], fps)
+                record.update(sent_audio=False, frame_times_s=[item['time_s'] for item in frames])
+                url, body, _ = build_request(model, 'frames', fps, '', frames, metadata, prompt)
+                record['actual_prompt'] = body['messages'][0]['content'][0]['text']
+                record['preprocess_s'] = round(time.perf_counter() - started, 3)
+                output = call_v13_model(url, body, key, record)
+                record['analysis'] = validate_stage_events(output, metadata['duration_s'])
             else:
-                request_path = strip_audio(path, folder / 'visual-only.mp4') if metadata['has_audio'] else path
+                send_audio = metadata['has_audio'] and supports_video_audio(model)
+                request_path = path if send_audio or not metadata['has_audio'] else strip_audio(path, folder / 'visual-only.mp4')
                 data = base64.b64encode(request_path.read_bytes()).decode()
-                record['sent_audio'] = False
+                record['sent_audio'] = send_audio
                 record['sent_video_bytes'] = request_path.stat().st_size
-                url, body, _ = build_request(model, 'direct', 2., data, [], metadata, prompt)
+                url, body, _ = build_request(model, 'direct', fps, data, [], metadata, prompt)
                 record['actual_prompt'] = body['messages'][0]['content'][0]['text']
                 record['preprocess_s'] = round(time.perf_counter() - started, 3)
                 output = call_v13_model(url, body, key, record)
@@ -672,7 +733,7 @@ def analyze_events(raw, video_name, version='v13'):
     return record
 
 
-def suggest_opportunities(raw, video_name, record_id, selected_ids):
+def suggest_opportunities(raw, video_name, record_id, selected_ids, version=None, model='qwen3-vl-plus'):
     if not selected_ids or len(selected_ids) != len(set(selected_ids)):
         raise ValueError('请至少审核并选择一条不重复的事件。')
     parent = stage_record(record_id)
@@ -681,17 +742,19 @@ def suggest_opportunities(raw, video_name, record_id, selected_ids):
     by_id = {event['observation_id']: event for event in parent['analysis']['events']}
     if any(item not in by_id for item in selected_ids):
         raise ValueError('选择了不属于事件记录的画面。')
+    if model not in MODELS:
+        raise ValueError('无效的模型。请在页面上选择 .env 里配置的模型。')
     key = os.environ.get('BEEROUTE_API_KEY')
     if not key:
         raise ValueError('尚未配置 BEEROUTE_API_KEY。')
-    _, prompt = load_stage_prompt('opportunities')
+    prompt_path, prompt = load_stage_prompt('opportunities', version)
     started = time.perf_counter()
     record = {'record_id': secrets.token_hex(16), 'parent_record_id': record_id,
               'parent_record_file': parent['record_file'], 'stage': 'opportunities',
-              'created_at': datetime.now(timezone.utc).isoformat(), 'model': 'qwen3-vl-plus',
+              'created_at': datetime.now(timezone.utc).isoformat(), 'model': model,
               'mode': 'frames', 'fps': 2., 'video_name': Path(video_name).name,
               'video_sha256': parent['video_sha256'], 'video_bytes': len(raw),
-              'prompt_file': 'prompts/v13/opportunities.txt', 'prompt': prompt,
+              'prompt_file': f'prompts/{prompt_path.parent.name}/{prompt_path.name}', 'prompt': prompt,
               'selected_event_ids': selected_ids, 'status': 'failed', 'sent_audio': False}
     try:
         with tempfile.TemporaryDirectory() as temp:
@@ -720,8 +783,9 @@ def suggest_opportunities(raw, video_name, record_id, selected_ids):
             record['observations'] = observations
             record['frame_times_s'] = [item['frame_time_s'] for item in observations]
             record['actual_prompt'] = '\n\n'.join(item['text'] for item in content if item['type'] == 'text')
-            body = {'model': 'qwen3-vl-plus', 'messages': [{'role': 'user', 'content': content}],
-                    'max_tokens': 4096, 'enable_thinking': False}
+            body = {'model': model, 'messages': [{'role': 'user', 'content': content}], 'max_tokens': 4096}
+            if str(model).startswith('qwen'):
+                body['enable_thinking'] = False
             base = os.environ.get('BEEROUTE_BASE_URL', 'https://beeroute.ai/v1').rstrip('/')
             if not base.startswith('https://'):
                 raise ValueError('模型 API 地址必须使用 HTTPS。')
@@ -737,6 +801,249 @@ def suggest_opportunities(raw, video_name, record_id, selected_ids):
     except (ValueError, KeyError, IndexError, TypeError, subprocess.TimeoutExpired, TimeoutError) as error:
         record['error'] = str(error)
     record['total_s'] = round(time.perf_counter() - started, 3)
+    save_record(record)
+    return record
+
+
+GAME_IDS = ('tap_object', 'choice', 'timing', 'mash', 'drag', 'hold_release', 'swipe')
+GAMEPLAY_FIELDS = ('fit', 'player_goal', 'player_action', 'success', 'failure', 'feedback')
+RESUME_INTENT = '到点暂停，结束后继续播放'
+
+
+def load_game_catalog():
+    path = ROOT / 'prompts' / 'games' / 'catalog.json'
+    catalog = json.loads(path.read_text(encoding='utf-8'))
+    types = catalog.get('types') if isinstance(catalog, dict) else None
+    if not isinstance(types, list) or not types:
+        raise ValueError('小游戏目录无效。')
+    seen = set()
+    for item in types:
+        if not isinstance(item, dict):
+            raise ValueError('小游戏目录无效。')
+        if item.get('id') not in GAME_IDS or item['id'] in seen:
+            raise ValueError('小游戏目录的类型无效或重复。')
+        seen.add(item['id'])
+        for key in ('name', 'play', 'situations', 'player_goal'):
+            if not isinstance(item.get(key), str) or not item[key].strip():
+                raise ValueError('小游戏目录缺少玩法说明。')
+    if seen != set(GAME_IDS):
+        raise ValueError('小游戏目录必须包含全部预设玩法。')
+    return catalog
+
+
+def catalog_text(catalog):
+    return '\n'.join(
+        f"- {item['id']}｜{item['name']}｜玩法：{item['play']}｜适用：{item['situations']}｜玩家目标：{item['player_goal']}"
+        for item in catalog['types'])
+
+
+def load_gameplay_prompt(version=None):
+    return load_stage_prompt('gameplay', version)
+
+
+def indexed_points(opportunity):
+    points = []
+    for index, point in enumerate(opportunity['analysis']['interaction_points'], 1):
+        item = dict(point)
+        item['point_id'] = f'p{index}'
+        points.append(item)
+    return points
+
+
+def finite_time(value, duration):
+    if type(value) not in (int, float) or isinstance(value, bool) or not math.isfinite(value):
+        return None
+    if value < 0 or value > duration + 1:
+        return None
+    return duration if value > duration else value
+
+
+def validate_gameplay(text, points, catalog):
+    result = json.loads(text)
+    if not isinstance(result, dict) or not isinstance(result.get('recommendations'), list):
+        raise ValueError('玩法阶段必须返回 recommendations 数组。')
+    by_id = {item['point_id']: item for item in points}
+    names = {item['id']: item['name'] for item in catalog['types']}
+    recommendations = []
+    seen = set()
+    for item in result['recommendations']:
+        if not isinstance(item, dict) or item.get('point_id') not in by_id:
+            raise ValueError('玩法引用了未选择的交互点。')
+        if item['point_id'] in seen:
+            raise ValueError('同一交互点出现了重复推荐。')
+        seen.add(item['point_id'])
+        if item.get('game_id') not in names:
+            raise ValueError('玩法类型不在预设目录中。')
+        for key in GAMEPLAY_FIELDS:
+            if not isinstance(item.get(key), str) or not item[key].strip():
+                raise ValueError('玩法推荐缺少场景关系或玩法说明。')
+        source = by_id[item['point_id']]
+        recommendations.append({
+            'point_id': item['point_id'], 'observation_id': source['observation_id'],
+            'event_id': source.get('event_id') or source['observation_id'], 'time_s': source['time_s'],
+            'opportunity': source['opportunity'], 'reason': source['reason'], 'game_id': item['game_id'],
+            'game_name': names[item['game_id']], **{key: item[key].strip() for key in GAMEPLAY_FIELDS}})
+    recommendations.sort(key=lambda item: (item['time_s'], item['point_id']))
+    return {'recommendations': recommendations, 'limitations': []}
+
+
+def suggest_gameplay(raw, video_name, record_id, selected_ids, version=None, model='qwen3-vl-plus'):
+    if not selected_ids or len(selected_ids) != len(set(selected_ids)):
+        raise ValueError('请至少选择一个不重复的交互点。')
+    parent = load_stage_result(record_id, 'opportunities', '机会记录')
+    if not raw or len(raw) > MAX_VIDEO or hashlib.sha256(raw).hexdigest() != parent['video_sha256']:
+        raise ValueError('玩法推荐使用的视频与机会记录不一致，未调用模型。')
+    points = indexed_points(parent)
+    by_id = {item['point_id']: item for item in points}
+    if any(item not in by_id for item in selected_ids):
+        raise ValueError('选择了不属于机会记录的交互点。')
+    if model not in MODELS:
+        raise ValueError('无效的模型。请在页面上选择 .env 里配置的模型。')
+    key = os.environ.get('BEEROUTE_API_KEY')
+    if not key:
+        raise ValueError('尚未配置 BEEROUTE_API_KEY。')
+    prompt_path, prompt = load_gameplay_prompt(version)
+    catalog = load_game_catalog()
+    if prompt_path.parent.name == 'v17':
+        catalog = dict(catalog)
+        catalog['types'] = [item for item in catalog['types'] if item['id'] != 'choice']
+    started = time.perf_counter()
+    record = {'record_id': secrets.token_hex(16), 'parent_record_id': record_id,
+              'parent_record_file': parent['record_file'], 'stage': 'gameplay',
+              'created_at': datetime.now(timezone.utc).isoformat(), 'model': model,
+              'mode': 'frames', 'fps': 2., 'video_name': Path(video_name).name,
+              'video_sha256': parent['video_sha256'], 'video_bytes': len(raw),
+              'prompt_file': f'prompts/{prompt_path.parent.name}/{prompt_path.name}', 'prompt': prompt,
+              'catalog_file': 'prompts/games/catalog.json',
+              'excluded_game_ids': ['choice'] if prompt_path.parent.name == 'v17' else [],
+              'selected_point_ids': selected_ids,
+              'status': 'failed', 'sent_audio': False}
+    try:
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            path = folder / 'input.mp4'
+            path.write_bytes(raw)
+            metadata = probe(path)
+            record['metadata'] = metadata
+            frames = extract(path, folder, metadata['duration_s'], 2.)
+            events_by_id = {}
+            if parent.get('parent_record_id'):
+                try:
+                    events_record = stage_record(parent['parent_record_id'])
+                    events_by_id = {event['observation_id']: event for event in events_record['analysis']['events']}
+                except (ValueError, KeyError, TypeError):
+                    events_by_id = {}
+            observations = []
+            content = [{'type': 'text', 'text': prompt + '\n\n预设小游戏目录：\n' + catalog_text(catalog)}]
+            for point_id in selected_ids:
+                point = by_id[point_id]
+                frame = min(frames, key=lambda item: abs(item['time_s'] - point['time_s']))
+                event = events_by_id.get(point['observation_id'])
+                if event:
+                    event_text = f"当前事件：{event['description']}\n当前事件画面依据：{event['evidence']}"
+                else:
+                    event_text = '当前事件描述：无'
+                content.append({'type': 'text', 'text':
+                                f"point_id={point['point_id']}；observation_id={point['observation_id']}；"
+                                f"原片画面时间={frame['time_s']:.6f}秒。\n机会：{point['opportunity']}\n"
+                                f"理由：{point['reason']}\n{event_text}"})
+                content.append({'type': 'image_url', 'image_url': {'url': 'data:image/jpeg;base64,' + frame['data']}})
+                observations.append({'point_id': point['point_id'], 'observation_id': point['observation_id'],
+                                     'requested_time_s': point['time_s'], 'frame_time_s': frame['time_s'],
+                                     'frame_sha256': hashlib.sha256(base64.b64decode(frame['data'])).hexdigest()})
+            record['observations'] = observations
+            record['frame_times_s'] = [item['frame_time_s'] for item in observations]
+            record['actual_prompt'] = '\n\n'.join(item['text'] for item in content if item['type'] == 'text')
+            body = {'model': model, 'messages': [{'role': 'user', 'content': content}], 'max_tokens': 4096}
+            if str(model).startswith('qwen'):
+                body['enable_thinking'] = False
+            base = os.environ.get('BEEROUTE_BASE_URL', 'https://beeroute.ai/v1').rstrip('/')
+            if not base.startswith('https://'):
+                raise ValueError('模型 API 地址必须使用 HTTPS。')
+            record['preprocess_s'] = round(time.perf_counter() - started, 3)
+            output = call_v13_model(base + '/chat/completions', body, key, record)
+            record['analysis'] = validate_gameplay(output, [by_id[item] for item in selected_ids], catalog)
+            record.update(status='success', cost=None, cost_note='未设置单价；按返回的 usage 核算。')
+    except HTTPError as error:
+        record['error'] = f'模型 API HTTP {error.code}。'
+        record['api_error_detail'] = error.read().decode('utf-8', errors='replace')[:2000]
+    except URLError:
+        record['error'] = '模型 API 网络连接失败。'
+    except (ValueError, KeyError, IndexError, TypeError, subprocess.TimeoutExpired, TimeoutError) as error:
+        record['error'] = str(error)
+    record['total_s'] = round(time.perf_counter() - started, 3)
+    save_record(record)
+    return record
+
+
+def save_gameplay_brief(payload):
+    if not isinstance(payload, dict):
+        raise ValueError('玩法描述格式不正确。')
+    opportunity = load_stage_result(payload.get('opportunity_record_id'), 'opportunities', '机会记录')
+    gameplay = load_stage_result(payload.get('gameplay_record_id'), 'gameplay', '玩法记录')
+    if gameplay.get('parent_record_id') != opportunity['record_id']:
+        raise ValueError('玩法记录与机会记录不对应。')
+    points = {item['point_id']: item for item in indexed_points(opportunity)}
+    recommendations = {item['point_id']: item for item in gameplay['analysis']['recommendations']}
+    expected = list(gameplay.get('selected_point_ids') or [])
+    selections = payload.get('selections')
+    if not isinstance(selections, list):
+        raise ValueError('玩法描述缺少 selections。')
+    got = [item.get('point_id') if isinstance(item, dict) else None for item in selections]
+    if len(got) != len(set(got)) or sorted(got) != sorted(expected):
+        raise ValueError('玩法描述必须包含本次推荐的每个交互点，且不能重复。')
+    names = {item['id']: item['name'] for item in load_game_catalog()['types']}
+    duration = opportunity['metadata']['duration_s']
+    saved = []
+    for item in selections:
+        point = points.get(item['point_id'])
+        if point is None:
+            raise ValueError('玩法描述引用了不存在的交互点。')
+        status = item.get('status')
+        if status not in ('accepted', 'edited', 'discarded'):
+            raise ValueError('玩法选择状态无效。')
+        adjusted = finite_time(item.get('adjusted_time_s', point['time_s']), duration)
+        if adjusted is None:
+            raise ValueError('调整后的时间超出片长。')
+        recommendation = recommendations.get(item['point_id'])
+        entry = {'point_id': point['point_id'], 'observation_id': point['observation_id'],
+                 'time_s': point['time_s'], 'adjusted_time_s': adjusted,
+                 'opportunity': point['opportunity'], 'reason': point['reason'], 'status': status,
+                 'ai_game_id': recommendation['game_id'] if recommendation else None,
+                 'ai_fit': recommendation['fit'] if recommendation else None, 'resume': RESUME_INTENT}
+        if status == 'discarded':
+            entry.update(game_id=None, game_name=None, fit='')
+            entry.update({key: '' for key in GAMEPLAY_FIELDS if key != 'fit'})
+        elif status == 'accepted':
+            if not recommendation:
+                raise ValueError('没有模型推荐的交互点不能直接接受。')
+            entry.update(game_id=recommendation['game_id'], game_name=recommendation['game_name'],
+                         fit=recommendation['fit'])
+            entry.update({key: recommendation[key] for key in GAMEPLAY_FIELDS if key != 'fit'})
+        else:
+            if item.get('game_id') not in names:
+                raise ValueError('玩法类型不在预设目录中。')
+            for key in ('player_goal', 'player_action', 'success', 'failure', 'feedback'):
+                if not isinstance(item.get(key), str) or not item[key].strip():
+                    raise ValueError('修改后的玩法缺少目标、操作、成功、失败或反馈。')
+            fit = item.get('fit')
+            if fit is None:
+                fit = recommendation['fit'] if recommendation else ''
+            if not isinstance(fit, str):
+                raise ValueError('玩法描述字段格式不正确。')
+            entry.update(game_id=item['game_id'], game_name=names[item['game_id']], fit=fit.strip())
+            entry.update({key: item[key].strip() for key in ('player_goal', 'player_action', 'success', 'failure', 'feedback')})
+        saved.append(entry)
+    saved.sort(key=lambda item: (item['time_s'], item['point_id']))
+    record = {'record_id': secrets.token_hex(16), 'stage': 'gameplay_brief',
+              'parent_record_id': gameplay['record_id'], 'parent_record_file': gameplay['record_file'],
+              'opportunity_record_id': opportunity['record_id'],
+              'opportunity_record_file': opportunity['record_file'],
+              'gameplay_record_id': gameplay['record_id'], 'gameplay_record_file': gameplay['record_file'],
+              'created_at': datetime.now(timezone.utc).isoformat(), 'model': 'qwen3-vl-plus', 'mode': 'brief',
+              'video_name': opportunity.get('video_name') or 'video', 'video_sha256': opportunity.get('video_sha256'),
+              'prompt_file': 'prompts/games/catalog.json', 'status': 'success', 'selections': saved,
+              'resume': RESUME_INTENT, 'cost': None, 'cost_note': '玩法描述由本地选择保存，未调用模型。'}
     save_record(record)
     return record
 
@@ -884,8 +1191,8 @@ class Handler(BaseHTTPRequestHandler):
                 prompt_files = []
                 prompt_catalog = []
             try:
-                event_path, event_prompt = load_stage_prompt('events')
-                opportunity_path, opportunity_prompt = load_stage_prompt('opportunities')
+                event_path, event_prompt = load_stage_prompt('events', 'v13')
+                opportunity_path, opportunity_prompt = load_stage_prompt('opportunities', 'v13')
                 prompt_catalog.append({'version': 'v13', 'flow': 'two_stage', 'files': [
                     {'path': f'prompts/v13/{event_path.name}', 'content': event_prompt},
                     {'path': f'prompts/v13/{opportunity_path.name}', 'content': opportunity_prompt}]})
@@ -893,12 +1200,16 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             try:
                 event_path, event_prompt = load_stage_prompt('events', 'v14')
-                opportunity_path, opportunity_prompt = load_stage_prompt('opportunities')
+                opportunity_path, opportunity_prompt = load_stage_prompt('opportunities', 'v13')
                 prompt_catalog.append({'version': 'v14', 'flow': 'two_stage', 'files': [
                     {'path': f'prompts/v14/{event_path.name}', 'content': event_prompt},
                     {'path': f'prompts/v13/{opportunity_path.name}', 'content': opportunity_prompt}]})
             except (FileNotFoundError, ValueError):
                 pass
+            try:
+                games = load_game_catalog()
+            except (FileNotFoundError, ValueError, json.JSONDecodeError):
+                games = None
             return self.respond(200, {
                 'token': TOKEN,
                 'models': MODELS,
@@ -906,6 +1217,8 @@ class Handler(BaseHTTPRequestHandler):
                 'prompt_file': prompt_file,
                 'prompt_files': prompt_files,
                 'prompt_catalog': prompt_catalog,
+                'stage_prompts': stage_prompt_catalog(),
+                'games': games,
                 'configured': {'beeroute': bool(os.environ.get('BEEROUTE_API_KEY'))}})
         if parsed.path == '/sample':
             try:
@@ -919,7 +1232,20 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get('X-Local-Token') != TOKEN:
             return self.respond(403, {'error': '请从本地首页发起请求。'})
         parsed = urlparse(self.path)
-        if parsed.path not in ('/analyze', '/events', '/opportunities'):
+        if parsed.path == '/briefs':
+            try:
+                n = int(self.headers.get('Content-Length', '0'))
+                if not 0 < n <= 1_000_000:
+                    raise ValueError('玩法描述为空或过大。')
+                payload = json.loads(self.rfile.read(n).decode('utf-8'))
+                return self.respond(200, save_gameplay_brief(payload))
+            except json.JSONDecodeError:
+                return self.respond(400, {'error': '玩法描述不是合法 JSON。'})
+            except ValueError as error:
+                return self.respond(400, {'error': str(error)})
+            except Exception:
+                return self.respond(500, {'error': '本地处理失败，请检查文件和运行环境。'})
+        if parsed.path not in ('/analyze', '/events', '/opportunities', '/gameplay'):
             return self.respond(404, {'error': 'Not found'})
         try:
             q = parse_qs(parsed.query)
@@ -936,10 +1262,20 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError('上传不完整。')
                 video_name = unquote(q.get('name', ['upload.mp4'])[0]) or 'upload.mp4'
             if parsed.path == '/events':
-                record = analyze_events(raw, video_name, q.get('version', ['v14'])[0])
+                mode = q.get('mode', ['direct'])[0]
+                fps = float(q.get('fps', ['2'])[0])
+                record = analyze_events(raw, video_name, q.get('version', ['v14'])[0],
+                                        q.get('model', ['qwen3-vl-plus'])[0], mode, fps)
             elif parsed.path == '/opportunities':
                 selected = [value for value in q.get('selected', [''])[0].split(',') if value]
-                record = suggest_opportunities(raw, video_name, q.get('record_id', [''])[0], selected)
+                record = suggest_opportunities(raw, video_name, q.get('record_id', [''])[0], selected,
+                                               q.get('version', [None])[0] or None,
+                                               q.get('model', ['qwen3-vl-plus'])[0])
+            elif parsed.path == '/gameplay':
+                selected = [value for value in q.get('selected', [''])[0].split(',') if value]
+                record = suggest_gameplay(raw, video_name, q.get('record_id', [''])[0], selected,
+                                          q.get('version', [None])[0] or None,
+                                          q.get('model', ['qwen3-vl-plus'])[0])
             else:
                 record = analyze(raw, q['model'][0], q['mode'][0], float(q['fps'][0]), video_name,
                                  q.get('prompt', [None])[0])

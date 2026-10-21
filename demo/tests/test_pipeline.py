@@ -369,6 +369,9 @@ class PipelineChecks(unittest.TestCase):
                 v14 = next(item for item in configuration['prompt_catalog'] if item['version'] == 'v14')
                 self.assertEqual([item['path'] for item in v14['files']],
                                  ['prompts/v14/events.txt', 'prompts/v13/opportunities.txt'])
+                self.assertNotIn('v15', [item['version'] for item in configuration['prompt_catalog']])
+                self.assertEqual([item['id'] for item in configuration['games']['types']],
+                                 ['tap_object', 'choice', 'timing', 'mash', 'drag', 'hold_release', 'swipe'])
             with patch.dict(os.environ, {'BEEROUTE_API_KEY': ''}):
                 request = Request(base+f'/analyze?model={next(iter(app.MODELS))}&mode=frames&fps=1&name=clip.mp4', data=b'fixture', headers={'X-Local-Token':token})
                 with self.assertRaises(HTTPError) as raised:
