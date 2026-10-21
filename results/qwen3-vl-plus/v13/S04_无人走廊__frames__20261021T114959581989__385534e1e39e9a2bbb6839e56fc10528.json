@@ -1,0 +1,109 @@
+{
+  "record_id": "385534e1e39e9a2bbb6839e56fc10528",
+  "parent_record_id": "17f968e849edd6d1a638f504de64340c",
+  "parent_record_file": "results/qwen3-vl-plus/S04_无人走廊__direct__20261021T114942117909__17f968e849edd6d1a638f504de64340c.json",
+  "stage": "opportunities",
+  "created_at": "2026-10-21T03:49:57.719631+00:00",
+  "model": "qwen3-vl-plus",
+  "mode": "frames",
+  "fps": 2.0,
+  "video_name": "S04_无人走廊.mp4",
+  "video_sha256": "804ccc008042b42319e577055ab157ebfd0a756ce8528af515a6b35af7ff1162",
+  "video_bytes": 2155759,
+  "prompt_file": "prompts/v13/opportunities.txt",
+  "prompt": "# 任务：在已审核的画面中寻找玩家参与机会\n输入是若干带 observation_id 和原片时间的画面，每个画面附有截至该时刻的可观察事件。逐个独立判断：如果现在暂停原视频，玩家可以参与什么行为或作出什么选择？为什么这个画面适合？输出只是 Day 2 候选机会，不指定小游戏类型、操作规则、胜负条件或 JS。\n\n允许同一画面提出多个真正不同的参与行为，也允许所有画面都没有合适机会。人物取得物体、准备行动、面临可见方向或发现可操作物体时可以考虑交互；不要求实拍视频后续真的按建议发展，也不要求画面停住或摆出标准准备姿势。玩家可选择与实拍结局不同的下一步，但这只是设想，不是视频已发生的事实。\n\n每个建议必须指向该 observation_id 的画面中可见的人、物、姿态或方向，reason 说明这种画面抓手与建议的联系。普通镜头、静态场景或只有物体的画面若想不出具体且与画面相连的参与，返回空，不为凑数量写泛泛的“增强沉浸感”。不要把字幕或先前事件当成当前画面必有的物体。不同 observation_id 虽在同一请求中，判断某一点时仅依据该画面和它附带的截至当时事件；后面的画面、后续动作和最终结果不得倒灌成当时已知的事实。\n\n不要自行给出秒数。仅使用输入中确实存在的 observation_id；不要重复同一画面的同一种操作。只返回合法 JSON 对象，不要 Markdown：\n{\"interaction_points\":[{\"observation_id\":\"e1\",\"opportunity\":\"玩家此刻可以参与的具体行为或选择\",\"reason\":\"此画面中的具体线索为什么支持这一建议\"}]}",
+  "selected_event_ids": [
+    "e1"
+  ],
+  "status": "success",
+  "sent_audio": false,
+  "metadata": {
+    "duration_s": 22.4,
+    "width": 640,
+    "height": 360,
+    "has_audio": true
+  },
+  "observations": [
+    {
+      "observation_id": "e1",
+      "requested_time_s": 11.2,
+      "frame_time_s": 11.011,
+      "frame_sha256": "1e2fdaefd837cb611221d1ef4e5bf3dfa01b1b0d3e0dab13cdbbd1b81fec3a24"
+    }
+  ],
+  "frame_times_s": [
+    11.011
+  ],
+  "actual_prompt": "# 任务：在已审核的画面中寻找玩家参与机会\n输入是若干带 observation_id 和原片时间的画面，每个画面附有截至该时刻的可观察事件。逐个独立判断：如果现在暂停原视频，玩家可以参与什么行为或作出什么选择？为什么这个画面适合？输出只是 Day 2 候选机会，不指定小游戏类型、操作规则、胜负条件或 JS。\n\n允许同一画面提出多个真正不同的参与行为，也允许所有画面都没有合适机会。人物取得物体、准备行动、面临可见方向或发现可操作物体时可以考虑交互；不要求实拍视频后续真的按建议发展，也不要求画面停住或摆出标准准备姿势。玩家可选择与实拍结局不同的下一步，但这只是设想，不是视频已发生的事实。\n\n每个建议必须指向该 observation_id 的画面中可见的人、物、姿态或方向，reason 说明这种画面抓手与建议的联系。普通镜头、静态场景或只有物体的画面若想不出具体且与画面相连的参与，返回空，不为凑数量写泛泛的“增强沉浸感”。不要把字幕或先前事件当成当前画面必有的物体。不同 observation_id 虽在同一请求中，判断某一点时仅依据该画面和它附带的截至当时事件；后面的画面、后续动作和最终结果不得倒灌成当时已知的事实。\n\n不要自行给出秒数。仅使用输入中确实存在的 observation_id；不要重复同一画面的同一种操作。只返回合法 JSON 对象，不要 Markdown：\n{\"interaction_points\":[{\"observation_id\":\"e1\",\"opportunity\":\"玩家此刻可以参与的具体行为或选择\",\"reason\":\"此画面中的具体线索为什么支持这一建议\"}]}\n\nobservation_id=e1；原片画面时间=11.011000秒。\n截至此刻的先前事件：无更早的已记录事件\n当前事件：走廊整体静止，无人物、动物或可动物体；镜头持续匀速前移，使近处窗框、门框、椅子等相对画面位置发生平滑后退位移，远景门与挂物逐渐变大但始终未被抵达。。\n当前事件画面依据：在11.2秒画面中：左侧第三扇窗下方可见两把叠放椅子（上椅倒置置于下椅座面），椅腿为金属管状；右侧第四扇绿门上方挂有黑底白字标牌（文字不可辨）；天花板中央有方形通风口；地面反光显示光源来自左侧窗外，整体光照均匀无突变。",
+  "preprocess_s": 0.17,
+  "request_bytes": 41530,
+  "request_options": {
+    "fps": 2.0,
+    "response_format": null
+  },
+  "api_attempts": [
+    {
+      "response_format": null
+    }
+  ],
+  "api_roundtrip_s": 1.684,
+  "raw_response": {
+    "choices": [
+      {
+        "message": {
+          "content": "{\"interaction_points\":[]}",
+          "reasoning_content": "",
+          "role": "assistant"
+        },
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 891,
+      "completion_tokens": 6,
+      "total_tokens": 897,
+      "completion_tokens_details": {
+        "text_tokens": 6
+      },
+      "prompt_tokens_details": {
+        "image_tokens": 338,
+        "text_tokens": 553,
+        "cached_tokens": 0
+      }
+    },
+    "created": 1792554603,
+    "system_fingerprint": null,
+    "model": "qwen3-vl-plus",
+    "id": "chatcmpl-88725ad1-e6a8-98b1-b2a5-0b5343762329"
+  },
+  "raw_text": "{\"interaction_points\":[]}",
+  "usage": {
+    "prompt_tokens": 891,
+    "completion_tokens": 6,
+    "total_tokens": 897,
+    "completion_tokens_details": {
+      "text_tokens": 6
+    },
+    "prompt_tokens_details": {
+      "image_tokens": 338,
+      "text_tokens": 553,
+      "cached_tokens": 0
+    }
+  },
+  "finish_reason": "stop",
+  "media_tokens": 338,
+  "video_tokens": 338,
+  "audio_tokens": 0,
+  "audio_verification": "not_sent",
+  "media_verification": "confirmed",
+  "analysis": {
+    "interaction_points": [],
+    "limitations": []
+  },
+  "cost": null,
+  "cost_note": "未设置单价；按返回的 usage 核算。",
+  "total_s": 1.863
+}

@@ -373,12 +373,372 @@ def save_record(record):
     folder = ROOT / 'results' / model
     folder.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime('%Y%m%dT%H%M%S%f')
-    filename = f"{safe_stem(record.get('video_name') or 'video')}__{record['mode']}__{stamp}__{secrets.token_hex(4)}.json"
+    suffix = record.get('record_id') or secrets.token_hex(4)
+    filename = f"{safe_stem(record.get('video_name') or 'video')}__{record['mode']}__{stamp}__{suffix}.json"
     path = folder / filename
     with path.open('x', encoding='utf-8') as output:
         json.dump(record, output, ensure_ascii=False, indent=2)
     record['record_file'] = f'results/{model}/{filename}'
     return path
+
+
+def load_stage_prompt(stage, version='v13'):
+    if stage not in ('events', 'opportunities'):
+        raise ValueError('无效的两阶段提示词。')
+    if version not in ('v13', 'v14') or (version == 'v14' and stage != 'events'):
+        raise ValueError('两阶段提示词版本无效。')
+    path = ROOT / 'prompts' / version / f'{stage}.txt'
+    prompt = path.read_text(encoding='utf-8').strip()
+    if not prompt:
+        raise ValueError(f'{path.name} 是空文件。')
+    return path, prompt
+
+
+class TruncatedOutputError(ValueError):
+    """The model reached its output cap; keep its raw response and retry smaller media."""
+
+
+def validate_stage_events(text, duration):
+    result = json.loads(text)
+    if (not isinstance(result, dict) or not isinstance(result.get('summary'), str)
+            or not isinstance(result.get('events'), list)
+            or not isinstance(result.get('limitations'), list)
+            or not all(isinstance(x, str) for x in result['limitations'])
+            or 'interaction_points' in result):
+        raise ValueError('事件阶段必须只返回 summary、events 和 limitations。')
+    events = []
+    for event in result['events']:
+        if not isinstance(event, dict):
+            raise ValueError('事件格式错误。')
+        for key in ('start_s', 'end_s', 'observation_s'):
+            value = event.get(key)
+            if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= duration + 1:
+                raise ValueError('事件时间或代表画面时间无效。')
+            if value > duration:
+                event[key] = duration
+                result['limitations'].append(f'{key} {value:g} 秒略超片长，已收到片尾。')
+        if not event['start_s'] <= event['observation_s'] <= event['end_s']:
+            raise ValueError('代表画面时间必须在事件区间内。')
+        for key in ('description', 'evidence', 'uncertainty'):
+            if not isinstance(event.get(key), str) or not event[key].strip():
+                raise ValueError('事件缺少具体描述、画面依据或不确定性。')
+        events.append(event)
+    events.sort(key=lambda item: (item['observation_s'], item['start_s']))
+    for index, event in enumerate(events, 1):
+        event['observation_id'] = f'e{index}'
+    result['events'] = events
+    return result
+
+
+def validate_stage_opportunities(text, observations):
+    result = json.loads(text)
+    if not isinstance(result, dict) or not isinstance(result.get('interaction_points'), list):
+        raise ValueError('机会阶段必须返回 interaction_points 数组。')
+    by_id = {item['observation_id']: item for item in observations}
+    points = []
+    seen = set()
+    for point in result['interaction_points']:
+        if not isinstance(point, dict) or point.get('observation_id') not in by_id:
+            raise ValueError('机会引用了未审核的画面 ID。')
+        for key in ('opportunity', 'reason'):
+            if not isinstance(point.get(key), str) or not point[key].strip():
+                raise ValueError('机会缺少参与行为或理由。')
+        identity = (point['observation_id'], point['opportunity'].strip())
+        if identity in seen:
+            continue
+        seen.add(identity)
+        source = by_id[point['observation_id']]
+        points.append({'observation_id': point['observation_id'], 'event_id': source['observation_id'],
+                       'time_s': source['frame_time_s'], 'opportunity': point['opportunity'].strip(),
+                       'reason': point['reason'].strip()})
+    points.sort(key=lambda item: (item['time_s'], item['observation_id']))
+    return {'interaction_points': points, 'limitations': []}
+
+
+def call_v13_model(url, body, key, record):
+    payload = json.dumps(body).encode()
+    if len(payload) > 19 * 1024 * 1024:
+        raise ValueError('编码后请求过大，请减少审核画面或压缩视频。')
+    record['request_bytes'] = len(payload)
+    record['request_options'] = {'fps': record['fps'], 'response_format': body.get('response_format')}
+    record['api_attempts'] = [{'response_format': body.get('response_format')}]
+    started = time.perf_counter()
+    with urlopen(Request(url, data=payload, headers={'Content-Type': 'application/json',
+                                                    'Authorization': 'Bearer ' + key}), timeout=300) as response:
+        result = json.load(response)
+    record['api_roundtrip_s'] = round(time.perf_counter() - started, 3)
+    record['raw_response'] = result
+    choice = result['choices'][0]
+    content = choice['message'].get('content')
+    output = ''.join(p.get('text', '') for p in content if isinstance(p, dict)) if isinstance(content, list) else (content or '')
+    record['raw_text'] = output
+    record['usage'] = result.get('usage', {})
+    record['finish_reason'] = choice.get('finish_reason')
+    modalities = modality_token_counts(record['usage'])
+    record['media_tokens'] = sum(modalities.values()) if modalities is not None else None
+    record['video_tokens'] = modalities['image'] + modalities['video'] if modalities is not None else None
+    record['audio_tokens'] = modalities['audio'] if modalities is not None else None
+    record['audio_verification'] = 'not_sent'
+    record['media_verification'] = 'confirmed' if record['video_tokens'] else 'unreported'
+    if modalities is not None and record['video_tokens'] == 0:
+        raise ValueError('用量中没有图像或视频 Token，不能确认模型看到了画面。')
+    if record['finish_reason'] == 'length':
+        raise TruncatedOutputError('模型输出达到 4096 token 上限并被截断，原始响应已保留。')
+    if record['finish_reason'] not in ('stop', 'STOP'):
+        raise ValueError('模型未正常结束，原始输出已保留。')
+    return extract_json(output)
+
+
+def stage_record(record_id):
+    if not re.fullmatch(r'[0-9a-f]{32}', record_id or ''):
+        raise ValueError('事件记录 ID 无效。')
+    folder = ROOT / 'results' / 'qwen3-vl-plus'
+    matches = list(folder.glob(f'*__{record_id}.json'))
+    if len(matches) != 1:
+        raise ValueError('事件记录不存在。')
+    record = json.loads(matches[0].read_text(encoding='utf-8'))
+    if record.get('record_id') != record_id or record.get('stage') != 'events' or record.get('status') != 'success':
+        raise ValueError('事件记录不可用于第二阶段。')
+    record['record_file'] = f'results/qwen3-vl-plus/{matches[0].name}'
+    return record
+
+
+def segment_windows(duration):
+    """Twenty-second ownership windows, each later request sees one preceding second."""
+    if duration <= 25.:
+        return [(0., duration, 0., duration)]
+    windows = []
+    core_start = 0.
+    while core_start < duration:
+        core_end = min(duration, core_start + 20.)
+        windows.append((core_start, core_end, max(0., core_start - 1.), core_end))
+        core_start = core_end
+    return windows
+
+
+def clip_video(path, output, start_s, end_s):
+    run(['ffmpeg', '-v', 'error', '-i', str(path), '-ss', f'{start_s:.6f}',
+         '-t', f'{end_s-start_s:.6f}', '-map', '0:v:0', '-an', '-sn', '-dn',
+         '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+         '-movflags', '+faststart', str(output)])
+    if output.stat().st_size > MAX_VIDEO:
+        raise ValueError('分段编码后仍超过 12 MiB，请压缩源视频。')
+    return output
+
+
+def analyze_segment(path, folder, core_start, core_end, clip_start, clip_end,
+                    prompt, key, parent, depth=0):
+    clip = folder / f'segment-{len(parent["segments"])+1}.mp4'
+    clip_video(path, clip, clip_start, clip_end)
+    metadata = probe(clip)
+    data = base64.b64encode(clip.read_bytes()).decode()
+    segment = {'core_start_s': core_start, 'core_end_s': core_end,
+               'clip_start_s': clip_start, 'clip_end_s': clip_end,
+               'clip_sha256': hashlib.sha256(clip.read_bytes()).hexdigest(),
+               'sent_video_bytes': clip.stat().st_size, 'sent_audio': False,
+               'metadata': metadata, 'fps': 2., 'status': 'failed'}
+    parent['segments'].append(segment)
+    try:
+        url, body, _ = build_request('qwen3-vl-plus', 'direct', 2., data, [], metadata, prompt)
+        segment['actual_prompt'] = body['messages'][0]['content'][0]['text']
+        output = call_v13_model(url, body, key, segment)
+        analysis = validate_stage_events(output, metadata['duration_s'])
+        segment['analysis'] = analysis
+        segment['status'] = 'success'
+    except TruncatedOutputError as error:
+        segment['error'] = str(error)
+        if depth >= 1 or core_end - core_start <= 6.:
+            raise
+        middle = (core_start + core_end) / 2.
+        return (analyze_segment(path, folder, core_start, middle, max(0., core_start - 1.), middle,
+                                prompt, key, parent, depth + 1)
+                + analyze_segment(path, folder, middle, core_end, max(0., middle - 1.), core_end,
+                                  prompt, key, parent, depth + 1))
+    except (ValueError, KeyError, IndexError, TypeError, HTTPError, URLError) as error:
+        segment['error'] = str(error)
+        raise
+    # Only one segment owns each original-video time, despite overlapping input clips.
+    events = []
+    for event in analysis['events']:
+        shifted = dict(event)
+        shifted.pop('observation_id', None)
+        for field in ('start_s', 'end_s', 'observation_s'):
+            shifted[field] = round(event[field] + clip_start, 6)
+        at = shifted['observation_s']
+        if core_start <= at < core_end or (core_end >= parent['metadata']['duration_s'] and at == core_end):
+            shifted['segment_clip_start_s'] = clip_start
+            shifted['segment_core_start_s'] = core_start
+            events.append(shifted)
+    return events
+
+
+def deduplicate_segment_events(events):
+    """Drop only highly overlapping cross-segment continuation descriptions."""
+    def bigrams(value):
+        value = re.sub(r'\s+', '', value)
+        return {value[index:index + 2] for index in range(len(value) - 1)}
+
+    kept, dropped = [], []
+    for event in sorted(events, key=lambda item: (item['observation_s'], item['start_s'])):
+        boundary = event.get('segment_core_start_s', 0)
+        earlier = next((item for item in reversed(kept)
+                        if item.get('segment_core_start_s', 0) < boundary
+                        and item['end_s'] >= boundary), None)
+        if boundary and earlier and event['start_s'] < boundary:
+            old_words, new_words = bigrams(earlier['description']), bigrams(event['description'])
+            overlap = len(old_words & new_words) / max(1, min(len(old_words), len(new_words)))
+            if overlap >= 0.08:
+                dropped.append(event)
+                continue
+        kept.append(event)
+    return kept, dropped
+
+
+def analyze_events_segmented(path, folder, metadata, prompt, key, record):
+    record['segments'] = []
+    all_events = []
+    for start, end, clip_start, clip_end in segment_windows(metadata['duration_s']):
+        all_events.extend(analyze_segment(path, folder, start, end, clip_start, clip_end,
+                                          prompt, key, record))
+    all_events, record['deduplicated_overlap_events'] = deduplicate_segment_events(all_events)
+    successful = [item for item in record['segments'] if item['status'] == 'success']
+    summaries = [f"约{item['core_start_s']:g}–{item['core_end_s']:g}秒：{item['analysis']['summary']}"
+                 for item in successful]
+    limitations = ['长视频分段识别；相邻片段重叠约 1 秒，事件按代表画面归入唯一时间段。']
+    for item in successful:
+        limitations.extend(f"{item['clip_start_s']:g}秒片段：{value}" for value in item['analysis']['limitations'])
+    record['analysis'] = validate_stage_events(json.dumps({'summary': '；'.join(summaries),
+                                                           'events': all_events, 'limitations': limitations},
+                                                          ensure_ascii=False), metadata['duration_s'])
+    record['usage'] = {name: sum((item.get('usage') or {}).get(name, 0) for item in record['segments'])
+                       for name in ('prompt_tokens', 'completion_tokens', 'total_tokens')}
+    record['video_tokens'] = sum(item.get('video_tokens') or 0 for item in record['segments'])
+    record['audio_tokens'] = 0
+    record['audio_verification'] = 'not_sent'
+    record['media_verification'] = 'confirmed' if record['video_tokens'] else 'unreported'
+    record['request_bytes'] = sum(item.get('request_bytes') or 0 for item in record['segments'])
+    record['sent_video_bytes'] = sum(item.get('sent_video_bytes') or 0 for item in record['segments'])
+    record['api_roundtrip_s'] = round(sum(item.get('api_roundtrip_s') or 0 for item in record['segments']), 3)
+    record['finish_reason'] = 'stop'
+    record['status'] = 'success'
+
+
+def analyze_events(raw, video_name, version='v13'):
+    model = 'qwen3-vl-plus'
+    if model not in MODELS:
+        raise ValueError('请先在 BEEROUTE_MODELS 配置 qwen3-vl-plus。')
+    key = os.environ.get('BEEROUTE_API_KEY')
+    if not key:
+        raise ValueError('尚未配置 BEEROUTE_API_KEY。')
+    if not raw or len(raw) > MAX_VIDEO:
+        raise ValueError('视频须为非空 MP4，大小不超过 12 MiB。')
+    prompt_path, prompt = load_stage_prompt('events', version)
+    started = time.perf_counter()
+    record = {'record_id': secrets.token_hex(16), 'stage': 'events', 'created_at': datetime.now(timezone.utc).isoformat(),
+              'model': model, 'mode': 'direct', 'fps': 2., 'video_name': Path(video_name).name,
+              'video_sha256': hashlib.sha256(raw).hexdigest(), 'video_bytes': len(raw),
+              'prompt_file': f'prompts/{version}/{prompt_path.name}', 'prompt': prompt, 'status': 'failed'}
+    try:
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            path = folder / 'input.mp4'
+            path.write_bytes(raw)
+            metadata = probe(path)
+            record['metadata'] = metadata
+            if version == 'v14':
+                record['sent_audio'] = False
+                record['preprocess_s'] = round(time.perf_counter() - started, 3)
+                analyze_events_segmented(path, folder, metadata, prompt, key, record)
+            else:
+                request_path = strip_audio(path, folder / 'visual-only.mp4') if metadata['has_audio'] else path
+                data = base64.b64encode(request_path.read_bytes()).decode()
+                record['sent_audio'] = False
+                record['sent_video_bytes'] = request_path.stat().st_size
+                url, body, _ = build_request(model, 'direct', 2., data, [], metadata, prompt)
+                record['actual_prompt'] = body['messages'][0]['content'][0]['text']
+                record['preprocess_s'] = round(time.perf_counter() - started, 3)
+                output = call_v13_model(url, body, key, record)
+                record['analysis'] = validate_stage_events(output, metadata['duration_s'])
+            record.update(status='success', cost=None, cost_note='未设置单价；按返回的 usage 核算。')
+    except HTTPError as error:
+        record['error'] = f'模型 API HTTP {error.code}。'
+        record['api_error_detail'] = error.read().decode('utf-8', errors='replace')[:2000]
+    except URLError:
+        record['error'] = '模型 API 网络连接失败。'
+    except (ValueError, KeyError, IndexError, TypeError, subprocess.TimeoutExpired, TimeoutError) as error:
+        record['error'] = str(error)
+    record['total_s'] = round(time.perf_counter() - started, 3)
+    save_record(record)
+    return record
+
+
+def suggest_opportunities(raw, video_name, record_id, selected_ids):
+    if not selected_ids or len(selected_ids) != len(set(selected_ids)):
+        raise ValueError('请至少审核并选择一条不重复的事件。')
+    parent = stage_record(record_id)
+    if not raw or len(raw) > MAX_VIDEO or hashlib.sha256(raw).hexdigest() != parent['video_sha256']:
+        raise ValueError('第二阶段视频与事件记录不一致，未调用模型。')
+    by_id = {event['observation_id']: event for event in parent['analysis']['events']}
+    if any(item not in by_id for item in selected_ids):
+        raise ValueError('选择了不属于事件记录的画面。')
+    key = os.environ.get('BEEROUTE_API_KEY')
+    if not key:
+        raise ValueError('尚未配置 BEEROUTE_API_KEY。')
+    _, prompt = load_stage_prompt('opportunities')
+    started = time.perf_counter()
+    record = {'record_id': secrets.token_hex(16), 'parent_record_id': record_id,
+              'parent_record_file': parent['record_file'], 'stage': 'opportunities',
+              'created_at': datetime.now(timezone.utc).isoformat(), 'model': 'qwen3-vl-plus',
+              'mode': 'frames', 'fps': 2., 'video_name': Path(video_name).name,
+              'video_sha256': parent['video_sha256'], 'video_bytes': len(raw),
+              'prompt_file': 'prompts/v13/opportunities.txt', 'prompt': prompt,
+              'selected_event_ids': selected_ids, 'status': 'failed', 'sent_audio': False}
+    try:
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            path = folder / 'input.mp4'
+            path.write_bytes(raw)
+            metadata = probe(path)
+            record['metadata'] = metadata
+            frames = extract(path, folder, metadata['duration_s'], 2.)
+            observations = []
+            content = [{'type': 'text', 'text': prompt}]
+            for event in parent['analysis']['events']:
+                if event['observation_id'] not in selected_ids:
+                    continue
+                frame = min(frames, key=lambda item: abs(item['time_s'] - event['observation_s']))
+                preceding = [x['description'] for x in parent['analysis']['events']
+                             if x['observation_id'] != event['observation_id'] and x['end_s'] <= event['observation_s']]
+                context = ('\n'.join(preceding) if preceding else '无更早的已记录事件')
+                content.append({'type': 'text', 'text': f"observation_id={event['observation_id']}；原片画面时间={frame['time_s']:.6f}秒。"
+                                f"\n截至此刻的先前事件：{context}\n当前事件：{event['description']}。"
+                                f"\n当前事件画面依据：{event['evidence']}"})
+                content.append({'type': 'image_url', 'image_url': {'url': 'data:image/jpeg;base64,' + frame['data']}})
+                observations.append({'observation_id': event['observation_id'],
+                                     'requested_time_s': event['observation_s'], 'frame_time_s': frame['time_s'],
+                                     'frame_sha256': hashlib.sha256(base64.b64decode(frame['data'])).hexdigest()})
+            record['observations'] = observations
+            record['frame_times_s'] = [item['frame_time_s'] for item in observations]
+            record['actual_prompt'] = '\n\n'.join(item['text'] for item in content if item['type'] == 'text')
+            body = {'model': 'qwen3-vl-plus', 'messages': [{'role': 'user', 'content': content}],
+                    'max_tokens': 4096, 'enable_thinking': False}
+            base = os.environ.get('BEEROUTE_BASE_URL', 'https://beeroute.ai/v1').rstrip('/')
+            if not base.startswith('https://'):
+                raise ValueError('模型 API 地址必须使用 HTTPS。')
+            record['preprocess_s'] = round(time.perf_counter() - started, 3)
+            output = call_v13_model(base + '/chat/completions', body, key, record)
+            record['analysis'] = validate_stage_opportunities(output, observations)
+            record.update(status='success', cost=None, cost_note='未设置单价；按返回的 usage 核算。')
+    except HTTPError as error:
+        record['error'] = f'模型 API HTTP {error.code}。'
+        record['api_error_detail'] = error.read().decode('utf-8', errors='replace')[:2000]
+    except URLError:
+        record['error'] = '模型 API 网络连接失败。'
+    except (ValueError, KeyError, IndexError, TypeError, subprocess.TimeoutExpired, TimeoutError) as error:
+        record['error'] = str(error)
+    record['total_s'] = round(time.perf_counter() - started, 3)
+    save_record(record)
+    return record
 
 
 def analyze(raw, model, mode, fps, video_name, prompt_version=None):
@@ -516,15 +876,36 @@ class Handler(BaseHTTPRequestHandler):
                 prompt_path, _ = load_prompt()
                 prompt_file = f'prompts/{prompt_path.name}'
                 prompt_files = [f'prompts/{p.name}' for _, p in prompt_paths()]
+                prompt_catalog = [{'version': p.stem, 'flow': 'single',
+                                   'files': [{'path': f'prompts/{p.name}', 'content': p.read_text(encoding='utf-8').strip()}]}
+                                  for _, p in prompt_paths()]
             except ValueError as error:
                 prompt_file = str(error)
                 prompt_files = []
+                prompt_catalog = []
+            try:
+                event_path, event_prompt = load_stage_prompt('events')
+                opportunity_path, opportunity_prompt = load_stage_prompt('opportunities')
+                prompt_catalog.append({'version': 'v13', 'flow': 'two_stage', 'files': [
+                    {'path': f'prompts/v13/{event_path.name}', 'content': event_prompt},
+                    {'path': f'prompts/v13/{opportunity_path.name}', 'content': opportunity_prompt}]})
+            except (FileNotFoundError, ValueError):
+                pass
+            try:
+                event_path, event_prompt = load_stage_prompt('events', 'v14')
+                opportunity_path, opportunity_prompt = load_stage_prompt('opportunities')
+                prompt_catalog.append({'version': 'v14', 'flow': 'two_stage', 'files': [
+                    {'path': f'prompts/v14/{event_path.name}', 'content': event_prompt},
+                    {'path': f'prompts/v13/{opportunity_path.name}', 'content': opportunity_prompt}]})
+            except (FileNotFoundError, ValueError):
+                pass
             return self.respond(200, {
                 'token': TOKEN,
                 'models': MODELS,
                 'samples': list_samples(),
                 'prompt_file': prompt_file,
                 'prompt_files': prompt_files,
+                'prompt_catalog': prompt_catalog,
                 'configured': {'beeroute': bool(os.environ.get('BEEROUTE_API_KEY'))}})
         if parsed.path == '/sample':
             try:
@@ -538,7 +919,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get('X-Local-Token') != TOKEN:
             return self.respond(403, {'error': '请从本地首页发起请求。'})
         parsed = urlparse(self.path)
-        if parsed.path != '/analyze':
+        if parsed.path not in ('/analyze', '/events', '/opportunities'):
             return self.respond(404, {'error': 'Not found'})
         try:
             q = parse_qs(parsed.query)
@@ -554,8 +935,14 @@ class Handler(BaseHTTPRequestHandler):
                 if len(raw) != n:
                     raise ValueError('上传不完整。')
                 video_name = unquote(q.get('name', ['upload.mp4'])[0]) or 'upload.mp4'
-            record = analyze(raw, q['model'][0], q['mode'][0], float(q['fps'][0]), video_name,
-                             q.get('prompt', [None])[0])
+            if parsed.path == '/events':
+                record = analyze_events(raw, video_name, q.get('version', ['v14'])[0])
+            elif parsed.path == '/opportunities':
+                selected = [value for value in q.get('selected', [''])[0].split(',') if value]
+                record = suggest_opportunities(raw, video_name, q.get('record_id', [''])[0], selected)
+            else:
+                record = analyze(raw, q['model'][0], q['mode'][0], float(q['fps'][0]), video_name,
+                                 q.get('prompt', [None])[0])
             return self.respond(200, record)
         except (ValueError, KeyError) as error:
             return self.respond(400, {'error': str(error)})

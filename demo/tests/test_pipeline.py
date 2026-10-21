@@ -358,7 +358,17 @@ class PipelineChecks(unittest.TestCase):
                 self.assertIn('候选交互点'.encode(), page)
                 self.assertIn('point.time_s'.encode(), page)
             with urlopen(base+'/config') as response:
-                token = json.load(response)['token']
+                configuration = json.load(response)
+                token = configuration['token']
+                v13 = next(item for item in configuration['prompt_catalog'] if item['version'] == 'v13')
+                self.assertEqual(v13['flow'], 'two_stage')
+                self.assertEqual([item['path'] for item in v13['files']],
+                                 ['prompts/v13/events.txt', 'prompts/v13/opportunities.txt'])
+                self.assertIn('可观察事件', v13['files'][0]['content'])
+                self.assertIn('参与机会', v13['files'][1]['content'])
+                v14 = next(item for item in configuration['prompt_catalog'] if item['version'] == 'v14')
+                self.assertEqual([item['path'] for item in v14['files']],
+                                 ['prompts/v14/events.txt', 'prompts/v13/opportunities.txt'])
             with patch.dict(os.environ, {'BEEROUTE_API_KEY': ''}):
                 request = Request(base+f'/analyze?model={next(iter(app.MODELS))}&mode=frames&fps=1&name=clip.mp4', data=b'fixture', headers={'X-Local-Token':token})
                 with self.assertRaises(HTTPError) as raised:

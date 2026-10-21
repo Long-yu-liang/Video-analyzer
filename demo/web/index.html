@@ -7,22 +7,41 @@
 <label for="file">或上传其他 MP4 · 最长 60 秒 / 12 MiB</label><input id="file" type="file" accept="video/mp4">
 <video id="video" controls></video>
 <label for="model">选择模型</label><select id="model"></select>
-<label for="prompt">提示词版本</label><select id="prompt"></select>
+<label for="prompt">提示词版本 / 分析流程</label><select id="prompt"></select>
+<details id="promptDetails" open><summary>查看所选版本的提示词全文</summary><div id="promptPreview"></div></details>
 <label for="mode">输入方式</label><select id="mode"><option value="frames">顺序采样画面 + 真实时间戳（不含声音）</option><option value="direct" selected>直接视频（声音能力取决于模型）</option></select>
 <label for="fps">采样率</label><select id="fps"><option>0.5</option><option>1</option><option selected>2</option></select>
-<p class="note">下拉列表来自 .env 的 BEEROUTE_MODELS。每次分析只调用当前选中的模型和提示词，结果写入 results/ 对应模型文件夹。v12 开放返回多个交互点，只给出位置、机会和理由；请逐条回看判断。旧版仍可手动选择。采样率越低越可能遗漏短动作。直接视频仅在 Gemini 或 qwen3.8-omni-flash 模型下尝试分析音轨；其他模型使用无音轨副本。抽帧没有声音。</p>
-<button id="analyze" disabled>调用真实 AI 分析</button><div class="status" id="status" role="status" aria-live="polite"></div></section>
-<section><h2>02 / 候选交互点</h2><p id="summary">尚未调用模型。没有预置分析结果。</p><div id="metrics"></div><div id="points"></div><h2>03 / 可观察事件</h2><div id="events"></div><ul id="limitations"></ul><button id="download" disabled>导出本次完整记录</button><details><summary>查看模型原始响应与用量</summary><pre id="raw">暂无</pre></details><p class="note">时间为模型估计值，点击候选点或事件回看核实。结构校验通过不代表事实一定正确；没有合适机会时允许空候选。</p></section></main>
+<p class="note" id="flowHint">v14 两阶段流程固定 qwen3-vl-plus：长视频分段识别事件，审核后再分析对应画面。分段会增加第一步调用次数与费用。旧版仍可选择。</p>
+<button id="recognize" disabled>第一步：识别可观察事件</button><button id="suggest" disabled>第二步：寻找交互机会</button><p class="note" id="reviewHint">先识别事件。可以取消勾选失实事件，再运行第二步；发现关键事件错误时请重新运行第一步。</p>
+<button id="analyze" disabled>旧流程：单次 AI 分析</button><div class="status" id="status" role="status" aria-live="polite"></div></section>
+<section><h2>02 / 候选交互点</h2><p id="summary">尚未调用模型。没有预置分析结果。</p><div id="metrics"></div><div id="points"></div><h2>03 / 可观察事件与审核</h2><div id="events"></div><ul id="limitations"></ul><button id="download" disabled>导出当前完整记录</button><details><summary>查看当前模型原始响应与用量</summary><pre id="raw">暂无</pre></details><p class="note">点击事件或候选点可回看原片。第二步一次接收多个画面，提示词要求不使用后续信息，但不能做到严格隔离；请核实每条理由。</p></section></main>
 <script>
-const $=id=>document.getElementById(id);let config,record,blobURL,busy=false;
+const $=id=>document.getElementById(id);let config,record,eventRecord,blobURL,busy=false,reviewChecks=[];
+const selectedEventIds=()=>reviewChecks.filter(item=>item.checked).map(item=>item.value);
+const isTwoStage=()=>['v13','v14'].includes($('prompt').value);
+function renderPromptPreview(){
+  const selected=(config?.prompt_catalog||[]).find(item=>item.version===$('prompt').value);
+  $('promptPreview').replaceChildren();
+  if(!selected){$('promptPreview').textContent='此版本的提示词正文未加载。';return}
+  for(const file of selected.files){
+    const title=document.createElement('h3');title.textContent=file.path;
+    const body=document.createElement('pre');body.textContent=file.content;
+    $('promptPreview').append(title,body);
+  }
+}
 function ready(){
   if(!config)return;
   const selected=$('model').value;
   const hasVideo=!!$('sample').value||!!$('file').files.length;
-  $('analyze').disabled=busy||!hasVideo||!selected||!$('prompt').value||!config.configured.beeroute;
+  $('analyze').disabled=busy||isTwoStage()||!hasVideo||!selected||!$('prompt').value||!config.configured.beeroute;
+  $('recognize').disabled=busy||!isTwoStage()||!hasVideo||!config.models?.['qwen3-vl-plus']||!config.configured.beeroute;
+  $('suggest').disabled=busy||!isTwoStage()||!hasVideo||!eventRecord||!selectedEventIds().length||!config.configured.beeroute;
+  $('model').disabled=$('mode').disabled=$('fps').disabled=busy||isTwoStage();
+  $('flowHint').textContent=isTwoStage()?`${$('prompt').value} 固定 qwen3-vl-plus、直接视频 2 fps。先识别事件并审核，再分析对应画面；v14 超过 25 秒会分段，多次调用第一步。`:'旧版单阶段：使用上方模型、输入方式及采样率，一次调用同时输出事件和候选。';
   const key=config.configured.beeroute?'已配置':'待配置 BEEROUTE_API_KEY';
   const names=Object.keys(config.models||{});
-  $('configState').textContent=names.length?`密钥${key}。提示词 ${$('prompt').value||config.prompt_file}。本次跑 ${selected||names[0]}，结果写入 results/${selected||names[0]}/。`:'请在 .env 设置 BEEROUTE_MODELS 后重启。';
+  const activeModel=isTwoStage()?'qwen3-vl-plus':(selected||names[0]);
+  $('configState').textContent=names.length?`密钥${key}。已选 ${$('prompt').value||config.prompt_file}。本次使用 ${activeModel}，结果写入 results/${activeModel}/。`:'请在 .env 设置 BEEROUTE_MODELS 后重启。';
 }
 fetch('/config').then(r=>r.json()).then(c=>{
   config=c;
@@ -30,22 +49,30 @@ fetch('/config').then(r=>r.json()).then(c=>{
   model.replaceChildren(...Object.keys(c.models||{}).map(name=>{const o=document.createElement('option');o.value=o.textContent=name;return o}));
   if(c.models?.['qwen3.8-omni-flash'])model.value='qwen3.8-omni-flash';
   const prompt=$('prompt');
-  const promptFiles=(c.prompt_files||[c.prompt_file]).filter(Boolean);
-  prompt.replaceChildren(...promptFiles.map(file=>{const o=document.createElement('option');o.value=file.match(/v\d+\.txt$/)?.[0].replace('.txt','')||'';o.textContent=file;return o}));
-  prompt.value=promptFiles.includes('prompts/v6.txt')?'v6':prompt.children[0]?.value||'';
+  const catalog=c.prompt_catalog||[];
+  prompt.replaceChildren(...catalog.map(item=>{const o=document.createElement('option');o.value=item.version;o.textContent=item.flow==='two_stage'?`${item.version} · 两阶段（${item.version==='v14'?'长视频分段识别':'事件识别'} → 机会发现）`:`${item.version} · 单阶段`;return o}));
+  prompt.value=c.models?.['qwen3-vl-plus']?(catalog.some(item=>item.version==='v14')?'v14':catalog.some(item=>item.version==='v13')?'v13':''):catalog.filter(item=>item.flow==='single').at(-1)?.version||'';
+  if(isTwoStage()&&c.models?.['qwen3-vl-plus']){model.value='qwen3-vl-plus';$('mode').value='direct';$('fps').value='2'}
   const sample=$('sample');
   const blank=document.createElement('option');blank.value='';blank.textContent='不使用样例，改为上传';
   sample.replaceChildren(blank,...(c.samples||[]).map(name=>{const o=document.createElement('option');o.value=o.textContent=name;return o}));
-  ready();
+  renderPromptPreview();ready();
 }).catch(()=>{$('configState').textContent='请在项目根目录运行 python demo/app.py，再访问本地地址。'});
 $('model').onchange=ready;
-$('prompt').onchange=ready;
+$('prompt').onchange=()=>{
+  record=null;eventRecord=null;reviewChecks=[];$('download').disabled=true;
+  $('summary').textContent='已切换提示词版本，请重新分析当前视频。';
+  $('points').replaceChildren();$('events').replaceChildren();$('metrics').textContent='';$('limitations').replaceChildren();$('raw').textContent='暂无';
+  $('reviewHint').textContent='先识别事件。';
+  if(isTwoStage()&&config.models?.['qwen3-vl-plus']){$('model').value='qwen3-vl-plus';$('mode').value='direct';$('fps').value='2'}
+  renderPromptPreview();ready();
+};
 $('sample').onchange=async()=>{
   if(blobURL){URL.revokeObjectURL(blobURL);blobURL=''}
   $('file').value='';
   const name=$('sample').value;
   if(name){$('video').src='/sample?name='+encodeURIComponent(name)}
-  record=null;$('download').disabled=true;$('summary').textContent=name?('已选择 '+name+'，等待分析。'):'尚未选择视频。';
+  record=null;eventRecord=null;reviewChecks=[];$('reviewHint').textContent='先识别事件。';$('download').disabled=true;$('summary').textContent=name?('已选择 '+name+'，等待分析。'):'尚未选择视频。';
   $('points').replaceChildren();$('events').replaceChildren();$('metrics').textContent='';$('limitations').replaceChildren();$('raw').textContent='暂无';ready();
 };
 $('file').onchange=()=>{
@@ -53,11 +80,73 @@ $('file').onchange=()=>{
   if(blobURL)URL.revokeObjectURL(blobURL);
   const f=$('file').files[0];
   if(f){blobURL=URL.createObjectURL(f);$('video').src=blobURL}
-  record=null;$('download').disabled=true;$('summary').textContent='已选择上传文件，等待分析。';
+  record=null;eventRecord=null;reviewChecks=[];$('reviewHint').textContent='先识别事件。';$('download').disabled=true;$('summary').textContent='已选择上传文件，等待分析。';
   $('points').replaceChildren();$('events').replaceChildren();$('metrics').textContent='';$('limitations').replaceChildren();$('raw').textContent='暂无';ready();
 };
+function videoRequestParams(){
+  const params={};let body;
+  if($('sample').value)params.sample=$('sample').value;
+  else{params.name=$('file').files[0].name;body=$('file').files[0]}
+  return {params,body};
+}
+function renderReviewedEvents(events){
+  $('events').replaceChildren();reviewChecks=[];
+  for(const e of events){
+    const row=document.createElement('div');row.className='event';
+    const box=document.createElement('input');box.type='checkbox';box.checked=true;box.value=e.observation_id;box.onchange=ready;reviewChecks.push(box);
+    const seek=document.createElement('button');seek.type='button';seek.textContent=`${e.observation_s.toFixed(2)} 秒 · ${e.description}`;
+    seek.onclick=()=>{$('video').currentTime=e.observation_s;$('video').pause()};
+    const detail=document.createElement('span');detail.textContent=`区间 ${e.start_s.toFixed(2)}–${e.end_s.toFixed(2)} 秒；画面依据：${e.evidence}；不确定：${e.uncertainty}`;
+    row.append(box,seek,detail);$('events').append(row);
+  }
+  $('reviewHint').textContent=events.length?'请逐条回看；取消勾选失实事件后，再运行第二步。':'第一步未记录事件；不能运行第二步。';
+  ready();
+}
+function renderStagePoints(points){
+  $('points').replaceChildren();
+  if(!points.length){$('points').textContent='本次未建议交互点。';return}
+  for(const point of points){
+    const b=document.createElement('button');b.className='event';b.textContent=`${point.time_s.toFixed(2)} 秒 · ${point.opportunity}`;
+    const detail=document.createElement('span');detail.textContent=`事件 ${point.event_id}；原因：${point.reason}`;b.append(detail);
+    b.onclick=()=>{$('video').currentTime=point.time_s;$('video').pause()};$('points').append(b);
+  }
+}
+$('recognize').onclick=async()=>{
+  busy=true;ready();$('file').disabled=$('sample').disabled=$('model').disabled=$('prompt').disabled=$('mode').disabled=$('fps').disabled=true;
+  eventRecord=null;reviewChecks=[];$('download').disabled=true;
+  $('events').replaceChildren();$('points').replaceChildren();$('limitations').replaceChildren();$('summary').textContent='第一步：识别事件中…';
+  $('status').textContent='正在调用 qwen3-vl-plus 识别画面事件（计费）。';
+  try{
+    const {params,body}=videoRequestParams();params.version=$('prompt').value;
+    const response=await fetch('/events?'+new URLSearchParams(params),{method:'POST',headers:{'X-Local-Token':config.token},body});
+    const result=await response.json();record=result;$('raw').textContent=JSON.stringify(result,null,2);$('download').disabled=!result.record_file;
+    if(!response.ok||result.status!=='success')throw Error(result.error||'事件识别失败');
+    eventRecord=result;$('summary').textContent=result.analysis.summary;
+    const segmentInfo=result.segments?` · 成功片段 ${result.segments.filter(item=>item.status==='success').length} / 请求 ${result.segments.length}`:'';
+    $('metrics').textContent=`第一步 ${result.model} · ${result.video_name} · ${result.prompt_file}${segmentInfo} · ${result.total_s}s · ${result.record_file}`;
+    renderReviewedEvents(result.analysis.events);
+    for(const item of result.analysis.limitations){const li=document.createElement('li');li.textContent=item;$('limitations').append(li)}
+    $('status').textContent=`事件已保存${segmentInfo}。请回看并审核，再点击第二步。`;
+  }catch(error){$('summary').textContent='第一步未获得通过校验的事件。';$('status').textContent=error.message}
+  finally{busy=false;$('file').disabled=$('sample').disabled=$('model').disabled=$('prompt').disabled=$('mode').disabled=$('fps').disabled=false;ready()}
+};
+$('suggest').onclick=async()=>{
+  const selected=selectedEventIds();if(!eventRecord||!selected.length)return;
+  busy=true;ready();$('file').disabled=$('sample').disabled=$('model').disabled=$('prompt').disabled=$('mode').disabled=$('fps').disabled=true;
+  $('points').replaceChildren();$('status').textContent='正在调用 qwen3-vl-plus 寻找参与机会（计费）。';
+  try{
+    const {params,body}=videoRequestParams();params.record_id=eventRecord.record_id;params.selected=selected.join(',');
+    const response=await fetch('/opportunities?'+new URLSearchParams(params),{method:'POST',headers:{'X-Local-Token':config.token},body});
+    const result=await response.json();record=result;$('raw').textContent=JSON.stringify(result,null,2);$('download').disabled=!result.record_file;
+    if(!response.ok||result.status!=='success')throw Error(result.error||'交互机会分析失败');
+    renderStagePoints(result.analysis.interaction_points);
+    $('metrics').textContent=`第二步 ${result.model} · ${result.video_name} · ${result.prompt_file} · ${result.total_s}s · ${result.record_file}；第一步 ${eventRecord.record_file}`;
+    $('status').textContent='候选已保存。点击每个位置回看，核查理由是否符合该画面。';
+  }catch(error){$('status').textContent=error.message}
+  finally{busy=false;$('file').disabled=$('sample').disabled=$('model').disabled=$('prompt').disabled=$('mode').disabled=$('fps').disabled=false;ready()}
+};
 $('analyze').onclick=async()=>{
-  busy=true;ready();$('download').disabled=true;
+  busy=true;eventRecord=null;reviewChecks=[];$('reviewHint').textContent='旧流程不包含事件审核；若要使用两阶段，请重新运行第一步。';ready();$('download').disabled=true;
   $('file').disabled=$('sample').disabled=$('mode').disabled=$('fps').disabled=$('prompt').disabled=true;
   $('points').replaceChildren();$('events').replaceChildren();$('limitations').replaceChildren();$('metrics').textContent='';
   $('summary').textContent='正在分析当前视频…';$('raw').textContent='等待模型响应';
