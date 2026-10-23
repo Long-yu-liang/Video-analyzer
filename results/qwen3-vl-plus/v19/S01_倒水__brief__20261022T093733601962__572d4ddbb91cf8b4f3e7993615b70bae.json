@@ -1,0 +1,217 @@
+{
+  "schema_version": 2,
+  "record_id": "572d4ddbb91cf8b4f3e7993615b70bae",
+  "stage": "gameplay_brief",
+  "parent_record_id": "42ebc0a5080d6dedc93ee196a26e0d7a",
+  "parent_record_file": "results/qwen3-vl-plus/S01_倒水__frames__20261022T093410085747__42ebc0a5080d6dedc93ee196a26e0d7a.json",
+  "opportunity_record_id": "9404c94c9312b9d338ba8ae13048283d",
+  "gameplay_record_id": "42ebc0a5080d6dedc93ee196a26e0d7a",
+  "created_at": "2026-10-22T01:37:33.601962+00:00",
+  "model": "qwen3-vl-plus",
+  "mode": "brief",
+  "video_name": "S01_倒水.mp4",
+  "video_sha256": "ebf90c3ef1a9bc5878356def106650d4f9177773e1f0fe516686aa727aa56561",
+  "prompt_file": "prompts/v19/gameplay.txt",
+  "prompt": "# 任务：把当前画面的参与机会设计成可选择、可实现的小游戏方案\n输入含封闭的玩法目录、默认规则、带 point_id 的机会以及每个点的实际暂停画面。以实际画面为准；旧机会和事件文字是待核实上下文，调整时间后尤其可能失效。\n\n统一设计为：暂停原视频，在静止画面上叠加小游戏控件，显示操作结果后继续原片。操作影响小游戏结果，不改变原片后续剧情。动态指针、蓄力条、计数和可拖动标记由小游戏自身驱动，不能等待暂停的人物继续运动。拖拽移动叠加标记，不移动原片像素。\n\n每个 point_id 提出零到两个有实际差异的方案，首选排在前面。不同输入、目标或判断机制才算不同方案，仅改写文案不算。不要为覆盖全部点强行设计，不设玩法类型优先级，不生成 JavaScript。没有具体参与目标可以返回空，并在 abstentions 写原因。画面事实必须真实，控件、规则和反馈可以新增，但明确属于游戏设计。不能把设计出的得分、对白或剧情说成视频事实。\n\n每个方案写清楚：title 名称；fit 当前可见的人物、物体或方向为何支持参与；player_goal 玩家目标；screen_description 暂停后显示什么、叠加对象是什么；player_action 玩家输入；success、failure 可执行判定；feedback 成功和失败各显示什么；difference 与同点另一方案的体验差异（只有一个则写独特之处）。规则遵循所附默认模板，数值是设计参数。需要选项时给出2至3个具体 choice_labels；需要滑动时给 direction（left/right/up/down）。其他类型省略这两项。点击和拖拽用 target_labels 描述用户需框选的对象，坐标由用户标注，不猜坐标。其余类型 target_labels 可为空数组。\n\n以下四组是假设示例，只教设计模式，不是当前视频事实：\n1. 持物准备行动：人物手持一个物体准备放置。可设计按住蓄力、进入目标区松开，用新蓄力条判断；也可用新往返指针做时机操作。暂停后人物不继续抬手，两个方案的动态均来自控件，不宣称改变真实放置结局。\n2. 物体操作：壶口与杯子都可见。可以拖动壶形叠加标记到杯口区域，用户框选起点和落点；也可以点击杯子作为确认目标。前者是空间对准，后者是目标识别；仅把“拖杯子”改写为“移动杯子”不是新方案。\n3. 可见方向选择：画面存在两条可辨认通道。可让玩家向可见通道方向短滑，或者显示标注清楚的两个选择按钮。玩法目标与通道关联，反馈只确认操作或选择，不伪造人物后续走向。\n4. 普通镜头：空白墙面或无具体参与目标的环境画面，返回空，不用泛泛的“点一下提高沉浸感”凑方案。动作已经结束时不能重新控制已完成的动作；若另有独立的新参与目标，可以另行设计并说明。\n\n只返回合法 JSON。game_id 必须来自本次目录，point_id 必须来自输入；每点最多两项，模型不要生成 option_id 或秒数。空数组合法。格式：\n{\"recommendations\":[{\"point_id\":\"p1\",\"game_id\":\"timing\",\"title\":\"把握放置节奏\",\"fit\":\"可见的人物与物体如何支持这次操作\",\"player_goal\":\"本次完成什么\",\"screen_description\":\"暂停画面上叠加往返指针和目标区\",\"player_action\":\"指针进入目标区时按下\",\"success\":\"8秒内在65%至85%区域按下\",\"failure\":\"区域外按下或超时\",\"feedback\":\"成功显示完成，失败显示错过，1秒后继续原片\",\"difference\":\"强调一次节奏判断，与持续蓄力不同\",\"target_labels\":[]}],\"abstentions\":[]}",
+  "catalog_snapshot": {
+    "version": "day3",
+    "types": [
+      {
+        "id": "tap_object",
+        "name": "点击物体",
+        "play": "点中画面里一个明确的人、物或标记。",
+        "situations": "某个对象被突出，或者玩家需要指出一个看得见的目标。",
+        "player_goal": "点对这个对象。"
+      },
+      {
+        "id": "choice",
+        "name": "剧情选择",
+        "play": "在两到三个画面里看得见的下一步中选择一个。",
+        "situations": "人物持有物体、停在分岔，或递交之前同时存在可见的行动分支。",
+        "player_goal": "作出一次选择。"
+      },
+      {
+        "id": "timing",
+        "name": "时机操作",
+        "play": "在短时间窗口内按下或松开。",
+        "situations": "动作即将发生，早一点或晚一点会对应不同的操作结果。",
+        "player_goal": "卡准这个时刻。"
+      },
+      {
+        "id": "mash",
+        "name": "连点",
+        "play": "在限时内重复点击，用来表示持续用力。",
+        "situations": "参与方式是连续施力，而不是在几个动作里选一个。",
+        "player_goal": "达到要求的次数，或撑过这段时间。"
+      },
+      {
+        "id": "drag",
+        "name": "拖拽",
+        "play": "把一个可见对象拖到另一个可见位置，或在可见载体上标出方向。",
+        "situations": "画面里存在传递、指向路径，或可以在纸张等载体上做标记。",
+        "player_goal": "完成这次移动或标记。"
+      },
+      {
+        "id": "hold_release",
+        "name": "按住后松开",
+        "play": "先按住，在动作到达合适的程度时松开。松早了力度不够，松晚了也错过。",
+        "situations": "投篮、拉弓、踢球蓄力。球可以已经在手里，手臂不必先举到顶。",
+        "player_goal": "在最高点或满蓄力时松开。"
+      },
+      {
+        "id": "swipe",
+        "name": "短滑",
+        "play": "手指快速滑向一个方向，表示跳、翻滚或换到旁边的位置。滑的是方向，不是把物体拖到落点。",
+        "situations": "车或人正在前进，障碍从某一侧或上方接近，用一次方向输入躲开。",
+        "player_goal": "滑对方向。"
+      }
+    ]
+  },
+  "template_snapshot": {
+    "version": "day3-design-v2",
+    "playback": "暂停原片，叠加控件；反馈结束后继续原片，小游戏结果不改变视频剧情",
+    "defaults": {
+      "tap_object": {
+        "timeout_s": 8,
+        "feedback_s": 1
+      },
+      "choice": {
+        "timeout_s": 8,
+        "feedback_s": 1,
+        "choices": [
+          "选项一",
+          "选项二"
+        ]
+      },
+      "timing": {
+        "timeout_s": 8,
+        "feedback_s": 1,
+        "period_s": 2,
+        "zone_min": 0.65,
+        "zone_max": 0.85
+      },
+      "hold_release": {
+        "timeout_s": 8,
+        "feedback_s": 1,
+        "charge_s": 2,
+        "zone_min": 0.65,
+        "zone_max": 0.85
+      },
+      "mash": {
+        "timeout_s": 5,
+        "feedback_s": 1,
+        "clicks": 10
+      },
+      "drag": {
+        "timeout_s": 8,
+        "feedback_s": 1
+      },
+      "swipe": {
+        "timeout_s": 8,
+        "feedback_s": 1,
+        "direction": "right",
+        "distance_ratio": 0.1
+      }
+    },
+    "anchor_roles": {
+      "tap_object": [
+        "target"
+      ],
+      "drag": [
+        "start",
+        "destination"
+      ]
+    }
+  },
+  "status": "success",
+  "selections": [
+    {
+      "observation_id": "e2",
+      "event_id": "e2",
+      "time_s": 2.08,
+      "opportunity": "玩家可以决定是否倾倒液体，以及倾倒的起始时机与初始倾倒角度",
+      "reason": "画面中手已持瓶悬停于杯口正上方约1cm处，瓶身倾斜、手指握持稳定，处于明确的‘即将倾倒’临界状态；瓶口未接触液体、杯内仍为空，构成一个可被玩家介入的决策点——选择在此刻开始倾倒、微调瓶身角度以控制流速，或暂缓动作观察环境。",
+      "point_id": "p1",
+      "adjusted_time_s": 2.08,
+      "frame_time_s": 2.08,
+      "frame_sha256": "d7cf6f75ee9fef4cae011609db178ea5218adfd1d004b064145725eb3e2abc11",
+      "status": "edited",
+      "decision_reason": "回看冻结画面，手持容器的可见部分与玻璃杯能辨认；删除1厘米和精确倾角，改为拖动独立圆形标记对准杯口矩形，避免要求移动原图或猜测液体结果。坐标由代理逐图框定，待用户最终确认。",
+      "title": "对准杯口",
+      "fit": "画面上方有手与容器的可见部分，中间有玻璃杯；两者提供起点与杯口落点。距离与倾角不作事实依据。",
+      "player_goal": "把容器位置的叠加标记拖到杯口操作区",
+      "screen_description": "原片暂停且不修改像素。在start矩形中心显示可拖动圆点，在destination矩形显示半透明落点框。只移动圆点，不移动原片容器或水流。",
+      "player_action": "8秒内从起点框按住圆点，拖到杯口落点框内松开",
+      "success": "释放位置位于destination矩形内",
+      "failure": "在矩形外释放，或8秒超时",
+      "feedback": "成功显示对准完成和绿色边框，失败显示未对准和红色边框；均显示1秒再继续原片，不改变录像里的倒水结果。",
+      "difference": "选择空间对准，放弃同帧按住蓄力方案；可直接利用可见容器和杯口，不把瓶身角度映射成未经验证的真实物理量。",
+      "option_id": "p1-o2",
+      "game_id": "drag",
+      "game_name": "拖拽",
+      "parameters": {
+        "timeout_s": 8,
+        "feedback_s": 1
+      },
+      "anchors": [
+        {
+          "role": "start",
+          "x": 0.17,
+          "y": 0.0,
+          "w": 0.22,
+          "h": 0.28
+        },
+        {
+          "role": "destination",
+          "x": 0.39,
+          "y": 0.23,
+          "w": 0.25,
+          "h": 0.09
+        }
+      ],
+      "rules_text": "暂停原片后，8 秒内从起点拖动叠加标记，释放点在人工标注的落点区域内成功，释放到区域外或超时失败；成功或失败反馈显示 1 秒后继续原片，结果不改变视频剧情。",
+      "origin": "ai",
+      "ready_for_codegen": true,
+      "resume": "暂停原片，叠加控件；反馈结束后继续原片，小游戏结果不改变视频剧情"
+    },
+    {
+      "observation_id": "e3",
+      "event_id": "e3",
+      "time_s": 5.2,
+      "opportunity": "玩家可以干预倾倒过程，例如突然停止倾倒、调整瓶身倾角以改变液流形态，或在液面升至特定高度时中断注入",
+      "reason": "画面显示液体正持续注入、液面已达杯高约1/3，飞溅与气泡清晰可见，表明倾倒正在进行中但尚未完成；瓶口仍保持倾倒姿态，手部未撤离，说明动作仍在可控阶段；液柱与杯底冲击的动态细节（如涡旋、气泡云）为玩家提供实时反馈线索，支持对倾倒节奏或终止点的主动干预。",
+      "point_id": "p2",
+      "adjusted_time_s": 5.2,
+      "frame_time_s": 5.2,
+      "frame_sha256": "97408b83ae8ac882909e30da67f3fa4cfa02245d0341ebbcf26ca9d9b4e7c4f1",
+      "status": "edited",
+      "decision_reason": "画面能看见注水、杯子和气泡，但不能可靠标定液高30%。删除40%至50%的冲突规则和控制真实液面的承诺，改为由新控件驱动的一次注水节奏操作；模板参数保持65%至85%。",
+      "title": "确认注水节奏",
+      "fit": "当前画面中水流进入玻璃杯，适合用新增节奏控件表达一次注水参与；只以可见水流和杯子作情境，不测算真实液高。",
+      "player_goal": "在新指针进入目标区时完成一次注水节奏确认",
+      "screen_description": "原片暂停。在画面下方叠加独立水平条，指针从零开始以2秒周期完成零到满到零往返，65%至85%为绿色目标区。水流与杯中液面保持原图静止，不模拟真实物理。",
+      "player_action": "8秒内在指针进入65%至85%区域时按下一次",
+      "success": "按下时控件进度位于闭区间[0.65,0.85]",
+      "failure": "目标区外按下，或8秒超时未操作",
+      "feedback": "成功显示节奏确认，失败显示错过节奏；反馈1秒后继续原片。只影响小游戏反馈，不停止或改写原视频注水。",
+      "difference": "与前一位置的空间拖动不同，此方案只进行一次时间判断；避免用冻结液面等待增长，也不使用模型提出的40%至50%规则。",
+      "option_id": "p2-o1",
+      "game_id": "timing",
+      "game_name": "时机操作",
+      "parameters": {
+        "timeout_s": 8,
+        "feedback_s": 1,
+        "period_s": 2,
+        "zone_min": 0.65,
+        "zone_max": 0.85
+      },
+      "anchors": [],
+      "rules_text": "暂停原片后，8 秒内新控件指针从零开始按 2 秒周期完成零到满到零的往返，在 65%–85% 按下成功，区域外按下或超时失败；成功或失败反馈显示 1 秒后继续原片，结果不改变视频剧情。",
+      "origin": "ai",
+      "ready_for_codegen": true,
+      "resume": "暂停原片，叠加控件；反馈结束后继续原片，小游戏结果不改变视频剧情"
+    }
+  ],
+  "cost": null,
+  "cost_note": "本地人工选择保存，未调用模型。"
+}

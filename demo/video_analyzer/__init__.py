@@ -1,0 +1,1 @@
+"""Video analyzer application package."""

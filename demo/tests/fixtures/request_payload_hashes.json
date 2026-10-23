@@ -1,0 +1,12 @@
+{
+  "beeroute|qwen3-vl-plus|direct": "b77d2c5d0ce504599384ec9e7e0f2fbd210603e3a674f91d21175f808faeb991",
+  "beeroute|qwen3-vl-plus|frames": "0addb19ac08cac42698586a27987a32834b2a6ebb958f1a4ab26b53441eb4bb4",
+  "beeroute|qwen3.8-omni-flash|direct": "9754bf24ef8ed5a2776862ce2801ce8800fc11673f8a34acca8123b711e8f56d",
+  "beeroute|qwen3.8-omni-flash|frames": "bce4779bea3555b3e317ec1dd1788e3a75746d84eb8a33772d64e1794f8e3a1c",
+  "beeroute|gemini-2.5-flash-lite|direct": "961b66ecf4b720f47ec72b1e965ead7a03a9e142d04cc65646ba02dd4c6410e5",
+  "beeroute|gemini-2.5-flash-lite|frames": "372eb04a88db9ccecc8624918bebc04bea7b57180b721299396fe8723f13d34a",
+  "qwen|qwen3-vl-plus|direct": "b4db09c39dd270ea4bd54bca67cf90e7d75e5a516393f19cfa1d0f125fd5b1ea",
+  "qwen|qwen3-vl-plus|frames": "89a93f998d18c2a2c05c3a8cce6fd2ca7826856419194c408607d1d748c2d7e4",
+  "gemini|gemini-2.5-flash-lite|direct": "e55e3b5d51ef3ce61be9fe42875ed95d75932d8e937274abefc9207edad8c98e",
+  "gemini|gemini-2.5-flash-lite|frames": "b8604f345db79173a608ffc354c784a4a36377a69665da832af516e9ea234d02"
+}

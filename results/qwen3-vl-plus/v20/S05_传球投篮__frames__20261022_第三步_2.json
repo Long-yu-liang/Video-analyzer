@@ -1,0 +1,409 @@
+{
+  "record_id": "deca476841a0550fbe2069a9e26800e1",
+  "parent_record_id": "1503ff95a1883df4372d57b0cba791a3",
+  "parent_record_file": "results/qwen3-vl-plus/S05_传球投篮__frames__20261022_第二步_4.json",
+  "stage": "gameplay",
+  "created_at": "2026-10-22T09:02:58.118845+00:00",
+  "model": "qwen3-vl-plus",
+  "mode": "frames",
+  "fps": 2.0,
+  "video_name": "S05_传球投篮.mp4",
+  "video_sha256": "99412e694d7335b0db892a8bcff9601ab578029a8a8b33a6c5ad9575cac85416",
+  "video_bytes": 4897000,
+  "prompt_file": "prompts/v20/gameplay.txt",
+  "prompt": "# 任务：根据画面与事件推荐适合玩家参与的玩法\n你负责视频分析器的第三步。输入包含已发现的交互机会、对应画面、事件文字，以及预设小游戏类型。重点回答：这里可以怎么玩？玩家做什么？为什么这种玩法与当前情境有关？\n\n画面与事件提供情境，玩法可以设想新的下一步，不必照实拍视频的后续发展。区分已经发生的事实与新设计的行为：不要把设想写成视频事实。以当前画面确认人物、物体及其关系；旧事件和机会文字可能不准确，位置调整后尤其如此。先明确玩家参与的是谁的行为，避免让持球人把球传给自己等主体混乱。\n\n默认优先推荐这六种：timing、hold_release、swipe、drag、tap_object、mash。choice 通常作为备选：如果同一场景还存在有意义的决策，可以在具体操作方案之外同时推荐choice，不要求先排除其他六种。若场景的核心本来就是不同方案、意图或回应之间的取舍，choice也可以成为首选，并说明原因。机会文字写成“决定A、B还是C”本身不足以证明存在决策价值，应看这些选项是否与当前情境有关、是否代表真正不同的参与目标。\n\n区分输入方式与玩法目标：点击按钮可以承载策略选择，拖向某个对象也可能包含对象之间的取舍。不要仅因为某个选择能用点击、拖拽或滑动实现，就排除choice；也不要把单一动作加一个确认按钮便称为决策玩法。\n\n先确定玩家参与的行为，再检查适合的操作：\n- timing：把握行动的启动、接收或执行时机，用一次适时按下来参与。\n- hold_release：按住积累力度或程度，在合适时松开。已经取得物体、尚未完全抬手，也可以设计成蓄力释放，不必先写成几个动作的选择题。\n- swipe：通过短滑表达移动、躲避、起跳或换向，重点是方向输入。\n- drag：把一个对象移到另一位置，表达传递、对准、放置或拨开。\n- tap_object：指出、选中或确认画面中具体可见的人、物、目标或路径。\n- mash：用重复点击表达持续施力、冲刺或累计推进。\n- choice：让玩家在有情境依据的不同方案、意图或回应之间作出取舍。fit 说明决策价值；若作为备选，说明它与首选操作玩法的体验差异，例如首选控制执行力度，备选决定采取哪种行动。\n\n六种操作之间按行为匹配，不为凑齐类型而推荐。每个点最多提供两个真正不同的玩法，最适合的在前。具体操作与决策都适合时，通常先给操作方案，再给choice备选；两个具体操作更合适时也可以都推荐。一个合适方案即可，没有决策价值时不为凑第二条加入choice，也不要求每个点都出现choice。没有与当前情境相关的具体参与想法时可以不推荐。\n\n用简明具体的文字说明：fit 场景与玩法的关系；player_goal 玩家目标；player_action 玩家如何参与；success、failure 操作完成或未完成的大致条件；feedback 玩家得到什么回应。这些是玩法设想，暂不要求精确时限、角度、坐标、按钮数组、命中比例或关卡参数。不生成 JavaScript 或其他代码。是否暂停、如何播放、是否接回原视频，留到选定玩法后的实现设计，不作为推荐门槛。可以描述游戏内反馈，但不要承诺已经实现，也不要拿未拍到的结果充当事实。\n\n# 假设示例：只说明推荐方式，不是当前输入的事实\n- 接住篮球准备行动：优先考虑hold_release，让玩家控制投篮力度；若同时有可见队友和合理的传球情境，可以用choice备选，让玩家决定自己出手还是传给队友。前者控制怎么执行，后者决定做什么，不要求后续录像真的按建议发展。\n- 准备发球：可用timing，让玩家把握发球时机。玩家目标是完成一次节奏合适的发球，不必先确定计时条和具体秒数。\n- 准备起跑：可用timing表达起跑反应，或mash表达冲刺发力。两者参与方式不同，不是只改文案。\n- 准备开车：前方存在可见障碍或通行方向时，优先用swipe表达方向控制；若不同去向结合已知情境形成有意义的路线取舍，可再给choice备选。只有一个明确避让动作时，不硬加路线选择。\n- 准备吃饭：可用tap_object选中要取用的食物，或drag把食物移向餐具，说明操作对象与进食行为的联系。\n- 准备做饭：可用drag把可见食材移入锅中；若已知烹饪目标支持不同处理顺序或搭配，可以用choice备选。不要凭空编造食谱、食材属性或角色喜好来制造选择价值。\n- 传球给谁：可用drag表达传递和对准；若多个可见队友的位置或当前情境支持不同传球方案，可以用choice表达对象取舍。说明两种玩法分别侧重操作执行与决策，不只更换输入控件。\n- 选路或选门：可用swipe控制进入方向，或tap_object指出目标；若已有线索支持不同路线的取舍，可以同时给choice备选。不臆造门后内容或路线后果。\n- 处理方案的取舍：输入明确给出了不同处理方案，且参与重点是比较、决定而非执行某个动作时，choice可作为首选。不要为维持操作类型优先而硬改成没有参与意义的点击。\n- 无决策价值的反例：只需把一个物体拖入唯一容器，把它改成“是否放入”的确认题没有提供不同体验；保留拖拽方案即可，不补choice。\n\n# 输出\n只输出合法JSON，不用Markdown。point_id来自输入，game_id来自目录，每点最多两条。title和difference可选；其余示例字段写非空文字。空recommendations合法，可用abstentions说明未推荐原因。不需要choice_labels、direction、target_labels、parameters或坐标。\nabstentions 是可省略的辅助字段；提供时必须为对象数组，每个对象包含输入中存在的 point_id 和非空字符串 reason。不得使用“p2：原因”这样的字符串数组。一个点已有推荐时，不再把它放入 abstentions；同一点的未推荐原因不重复。没有未推荐项时填 [] 或省略字段。\n\n以下示范输入包含 p1、p2，p1 有玩法、p2 没有合适玩法时的完整输出（不是当前视频事实）：\n{\"recommendations\":[{\"point_id\":\"p1\",\"game_id\":\"hold_release\",\"fit\":\"人物手中持有物体，下一步可以让玩家控制抛出程度\",\"player_goal\":\"完成一次力度合适的抛出\",\"player_action\":\"按住蓄力，在合适程度松开\",\"success\":\"释放力度在设定的合适范围内\",\"failure\":\"力度过大或过小\",\"feedback\":\"显示力度评价并给出游戏内动作反馈\"}],\"abstentions\":[{\"point_id\":\"p2\",\"reason\":\"这个画面没有清楚的参与主体或具体目标\"}]}\n\n所有点均无合适玩法时，同样返回 recommendations 空数组，并按实际输入逐个填写未推荐对象，例如输入只有 p1：\n{\"recommendations\":[],\"abstentions\":[{\"point_id\":\"p1\",\"reason\":\"没有与当前画面相关的具体参与目标\"}]}\n\n下面是不需要未推荐说明时的输出示例：\n{\"recommendations\":[{\"point_id\":\"p1\",\"game_id\":\"hold_release\",\"title\":\"蓄力出手\",\"fit\":\"人物已经持球，可把接下来的出手转化为玩家控制力度的行为\",\"player_goal\":\"完成一次力度合适的投篮操作\",\"player_action\":\"按住蓄力，在认为力度合适时松开\",\"success\":\"释放力度处于设定的合适范围\",\"failure\":\"释放过早或过晚，力度不合适\",\"feedback\":\"游戏提示力度是否合适，并给出相应出手反馈\",\"difference\":\"强调持续蓄力与释放，区别于选择传球对象\"}],\"abstentions\":[]}",
+  "catalog_file": "prompts/games/catalog.json",
+  "excluded_game_ids": [],
+  "selected_point_ids": [
+    "p1",
+    "p2",
+    "p3",
+    "p4"
+  ],
+  "status": "success",
+  "sent_audio": false,
+  "catalog_snapshot": {
+    "version": "day3",
+    "types": [
+      {
+        "id": "tap_object",
+        "name": "点击物体",
+        "play": "点中画面里一个明确的人、物或标记。",
+        "situations": "某个对象被突出，或者玩家需要指出一个看得见的目标。",
+        "player_goal": "点对这个对象。"
+      },
+      {
+        "id": "choice",
+        "name": "剧情选择",
+        "play": "在两到三个画面里看得见的下一步中选择一个。",
+        "situations": "人物持有物体、停在分岔，或递交之前同时存在可见的行动分支。",
+        "player_goal": "作出一次选择。"
+      },
+      {
+        "id": "timing",
+        "name": "时机操作",
+        "play": "在短时间窗口内按下或松开。",
+        "situations": "动作即将发生，早一点或晚一点会对应不同的操作结果。",
+        "player_goal": "卡准这个时刻。"
+      },
+      {
+        "id": "mash",
+        "name": "连点",
+        "play": "在限时内重复点击，用来表示持续用力。",
+        "situations": "参与方式是连续施力，而不是在几个动作里选一个。",
+        "player_goal": "达到要求的次数，或撑过这段时间。"
+      },
+      {
+        "id": "drag",
+        "name": "拖拽",
+        "play": "把一个可见对象拖到另一个可见位置，或在可见载体上标出方向。",
+        "situations": "画面里存在传递、指向路径，或可以在纸张等载体上做标记。",
+        "player_goal": "完成这次移动或标记。"
+      },
+      {
+        "id": "hold_release",
+        "name": "按住后松开",
+        "play": "先按住，在动作到达合适的程度时松开。松早了力度不够，松晚了也错过。",
+        "situations": "投篮、拉弓、踢球蓄力。球可以已经在手里，手臂不必先举到顶。",
+        "player_goal": "在最高点或满蓄力时松开。"
+      },
+      {
+        "id": "swipe",
+        "name": "短滑",
+        "play": "手指快速滑向一个方向，表示跳、翻滚或换到旁边的位置。滑的是方向，不是把物体拖到落点。",
+        "situations": "车或人正在前进，障碍从某一侧或上方接近，用一次方向输入躲开。",
+        "player_goal": "滑对方向。"
+      }
+    ]
+  },
+  "schema_version": 3,
+  "analysis_focus": "gameplay_recommendation",
+  "schema_enforcement": "local_core_strict_auxiliary_warnings",
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "recommendations"
+    ],
+    "properties": {
+      "recommendations": {
+        "type": "array",
+        "maxItems": 8,
+        "items": {
+          "type": "object",
+          "properties": {
+            "point_id": {
+              "type": "string",
+              "enum": [
+                "p1",
+                "p2",
+                "p3",
+                "p4"
+              ]
+            },
+            "game_id": {
+              "type": "string",
+              "enum": [
+                "tap_object",
+                "choice",
+                "timing",
+                "mash",
+                "drag",
+                "hold_release",
+                "swipe"
+              ]
+            },
+            "fit": {
+              "type": "string",
+              "minLength": 1
+            },
+            "player_goal": {
+              "type": "string",
+              "minLength": 1
+            },
+            "player_action": {
+              "type": "string",
+              "minLength": 1
+            },
+            "success": {
+              "type": "string",
+              "minLength": 1
+            },
+            "failure": {
+              "type": "string",
+              "minLength": 1
+            },
+            "feedback": {
+              "type": "string",
+              "minLength": 1
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "difference": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "point_id",
+            "game_id",
+            "fit",
+            "player_goal",
+            "player_action",
+            "success",
+            "failure",
+            "feedback"
+          ]
+        }
+      },
+      "abstentions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "point_id",
+            "reason"
+          ],
+          "properties": {
+            "point_id": {
+              "type": "string",
+              "enum": [
+                "p1",
+                "p2",
+                "p3",
+                "p4"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "metadata": {
+    "duration_s": 15.916667,
+    "width": 1280,
+    "height": 720,
+    "has_audio": false
+  },
+  "observations": [
+    {
+      "point_id": "p1",
+      "observation_id": "e2",
+      "original_time_s": 4.0,
+      "requested_time_s": 4,
+      "frame_time_s": 4.0,
+      "frame_sha256": "a84cd90b29ac4f78d9f3c6804bbbfca77237aaa07f9c878e819bf9ae204ebd52",
+      "frame_file": "results/qwen3-vl-plus/frames/deca476841a0550fbe2069a9e26800e1/p1.jpg"
+    },
+    {
+      "point_id": "p2",
+      "observation_id": "e3",
+      "original_time_s": 6.0,
+      "requested_time_s": 6,
+      "frame_time_s": 6.0,
+      "frame_sha256": "29c57dd0a961dccf059a1f91e26f12f68daa364e639ae962fcabb7175fcf4068",
+      "frame_file": "results/qwen3-vl-plus/frames/deca476841a0550fbe2069a9e26800e1/p2.jpg"
+    },
+    {
+      "point_id": "p3",
+      "observation_id": "e6",
+      "original_time_s": 12.0,
+      "requested_time_s": 12,
+      "frame_time_s": 12.0,
+      "frame_sha256": "39bba33e908dbf947062d33541680818aab75b7270a13f956bd9a820e78951bf",
+      "frame_file": "results/qwen3-vl-plus/frames/deca476841a0550fbe2069a9e26800e1/p3.jpg"
+    },
+    {
+      "point_id": "p4",
+      "observation_id": "e7",
+      "original_time_s": 14.0,
+      "requested_time_s": 14,
+      "frame_time_s": 14.0,
+      "frame_sha256": "b794b590a9d4cfe3d114ba5899034893cc65d78230e96f2ec2398b98e88ea838",
+      "frame_file": "results/qwen3-vl-plus/frames/deca476841a0550fbe2069a9e26800e1/p4.jpg"
+    }
+  ],
+  "frame_times_s": [
+    4.0,
+    6.0,
+    12.0,
+    14.0
+  ],
+  "actual_prompt": "# 任务：根据画面与事件推荐适合玩家参与的玩法\n你负责视频分析器的第三步。输入包含已发现的交互机会、对应画面、事件文字，以及预设小游戏类型。重点回答：这里可以怎么玩？玩家做什么？为什么这种玩法与当前情境有关？\n\n画面与事件提供情境，玩法可以设想新的下一步，不必照实拍视频的后续发展。区分已经发生的事实与新设计的行为：不要把设想写成视频事实。以当前画面确认人物、物体及其关系；旧事件和机会文字可能不准确，位置调整后尤其如此。先明确玩家参与的是谁的行为，避免让持球人把球传给自己等主体混乱。\n\n默认优先推荐这六种：timing、hold_release、swipe、drag、tap_object、mash。choice 通常作为备选：如果同一场景还存在有意义的决策，可以在具体操作方案之外同时推荐choice，不要求先排除其他六种。若场景的核心本来就是不同方案、意图或回应之间的取舍，choice也可以成为首选，并说明原因。机会文字写成“决定A、B还是C”本身不足以证明存在决策价值，应看这些选项是否与当前情境有关、是否代表真正不同的参与目标。\n\n区分输入方式与玩法目标：点击按钮可以承载策略选择，拖向某个对象也可能包含对象之间的取舍。不要仅因为某个选择能用点击、拖拽或滑动实现，就排除choice；也不要把单一动作加一个确认按钮便称为决策玩法。\n\n先确定玩家参与的行为，再检查适合的操作：\n- timing：把握行动的启动、接收或执行时机，用一次适时按下来参与。\n- hold_release：按住积累力度或程度，在合适时松开。已经取得物体、尚未完全抬手，也可以设计成蓄力释放，不必先写成几个动作的选择题。\n- swipe：通过短滑表达移动、躲避、起跳或换向，重点是方向输入。\n- drag：把一个对象移到另一位置，表达传递、对准、放置或拨开。\n- tap_object：指出、选中或确认画面中具体可见的人、物、目标或路径。\n- mash：用重复点击表达持续施力、冲刺或累计推进。\n- choice：让玩家在有情境依据的不同方案、意图或回应之间作出取舍。fit 说明决策价值；若作为备选，说明它与首选操作玩法的体验差异，例如首选控制执行力度，备选决定采取哪种行动。\n\n六种操作之间按行为匹配，不为凑齐类型而推荐。每个点最多提供两个真正不同的玩法，最适合的在前。具体操作与决策都适合时，通常先给操作方案，再给choice备选；两个具体操作更合适时也可以都推荐。一个合适方案即可，没有决策价值时不为凑第二条加入choice，也不要求每个点都出现choice。没有与当前情境相关的具体参与想法时可以不推荐。\n\n用简明具体的文字说明：fit 场景与玩法的关系；player_goal 玩家目标；player_action 玩家如何参与；success、failure 操作完成或未完成的大致条件；feedback 玩家得到什么回应。这些是玩法设想，暂不要求精确时限、角度、坐标、按钮数组、命中比例或关卡参数。不生成 JavaScript 或其他代码。是否暂停、如何播放、是否接回原视频，留到选定玩法后的实现设计，不作为推荐门槛。可以描述游戏内反馈，但不要承诺已经实现，也不要拿未拍到的结果充当事实。\n\n# 假设示例：只说明推荐方式，不是当前输入的事实\n- 接住篮球准备行动：优先考虑hold_release，让玩家控制投篮力度；若同时有可见队友和合理的传球情境，可以用choice备选，让玩家决定自己出手还是传给队友。前者控制怎么执行，后者决定做什么，不要求后续录像真的按建议发展。\n- 准备发球：可用timing，让玩家把握发球时机。玩家目标是完成一次节奏合适的发球，不必先确定计时条和具体秒数。\n- 准备起跑：可用timing表达起跑反应，或mash表达冲刺发力。两者参与方式不同，不是只改文案。\n- 准备开车：前方存在可见障碍或通行方向时，优先用swipe表达方向控制；若不同去向结合已知情境形成有意义的路线取舍，可再给choice备选。只有一个明确避让动作时，不硬加路线选择。\n- 准备吃饭：可用tap_object选中要取用的食物，或drag把食物移向餐具，说明操作对象与进食行为的联系。\n- 准备做饭：可用drag把可见食材移入锅中；若已知烹饪目标支持不同处理顺序或搭配，可以用choice备选。不要凭空编造食谱、食材属性或角色喜好来制造选择价值。\n- 传球给谁：可用drag表达传递和对准；若多个可见队友的位置或当前情境支持不同传球方案，可以用choice表达对象取舍。说明两种玩法分别侧重操作执行与决策，不只更换输入控件。\n- 选路或选门：可用swipe控制进入方向，或tap_object指出目标；若已有线索支持不同路线的取舍，可以同时给choice备选。不臆造门后内容或路线后果。\n- 处理方案的取舍：输入明确给出了不同处理方案，且参与重点是比较、决定而非执行某个动作时，choice可作为首选。不要为维持操作类型优先而硬改成没有参与意义的点击。\n- 无决策价值的反例：只需把一个物体拖入唯一容器，把它改成“是否放入”的确认题没有提供不同体验；保留拖拽方案即可，不补choice。\n\n# 输出\n只输出合法JSON，不用Markdown。point_id来自输入，game_id来自目录，每点最多两条。title和difference可选；其余示例字段写非空文字。空recommendations合法，可用abstentions说明未推荐原因。不需要choice_labels、direction、target_labels、parameters或坐标。\nabstentions 是可省略的辅助字段；提供时必须为对象数组，每个对象包含输入中存在的 point_id 和非空字符串 reason。不得使用“p2：原因”这样的字符串数组。一个点已有推荐时，不再把它放入 abstentions；同一点的未推荐原因不重复。没有未推荐项时填 [] 或省略字段。\n\n以下示范输入包含 p1、p2，p1 有玩法、p2 没有合适玩法时的完整输出（不是当前视频事实）：\n{\"recommendations\":[{\"point_id\":\"p1\",\"game_id\":\"hold_release\",\"fit\":\"人物手中持有物体，下一步可以让玩家控制抛出程度\",\"player_goal\":\"完成一次力度合适的抛出\",\"player_action\":\"按住蓄力，在合适程度松开\",\"success\":\"释放力度在设定的合适范围内\",\"failure\":\"力度过大或过小\",\"feedback\":\"显示力度评价并给出游戏内动作反馈\"}],\"abstentions\":[{\"point_id\":\"p2\",\"reason\":\"这个画面没有清楚的参与主体或具体目标\"}]}\n\n所有点均无合适玩法时，同样返回 recommendations 空数组，并按实际输入逐个填写未推荐对象，例如输入只有 p1：\n{\"recommendations\":[],\"abstentions\":[{\"point_id\":\"p1\",\"reason\":\"没有与当前画面相关的具体参与目标\"}]}\n\n下面是不需要未推荐说明时的输出示例：\n{\"recommendations\":[{\"point_id\":\"p1\",\"game_id\":\"hold_release\",\"title\":\"蓄力出手\",\"fit\":\"人物已经持球，可把接下来的出手转化为玩家控制力度的行为\",\"player_goal\":\"完成一次力度合适的投篮操作\",\"player_action\":\"按住蓄力，在认为力度合适时松开\",\"success\":\"释放力度处于设定的合适范围\",\"failure\":\"释放过早或过晚，力度不合适\",\"feedback\":\"游戏提示力度是否合适，并给出相应出手反馈\",\"difference\":\"强调持续蓄力与释放，区别于选择传球对象\"}],\"abstentions\":[]}\n\n预设小游戏目录：\n- tap_object｜点击物体｜玩法：点中画面里一个明确的人、物或标记。｜适用：某个对象被突出，或者玩家需要指出一个看得见的目标。｜玩家目标：点对这个对象。\n- choice｜剧情选择｜玩法：在两到三个画面里看得见的下一步中选择一个。｜适用：人物持有物体、停在分岔，或递交之前同时存在可见的行动分支。｜玩家目标：作出一次选择。\n- timing｜时机操作｜玩法：在短时间窗口内按下或松开。｜适用：动作即将发生，早一点或晚一点会对应不同的操作结果。｜玩家目标：卡准这个时刻。\n- mash｜连点｜玩法：在限时内重复点击，用来表示持续用力。｜适用：参与方式是连续施力，而不是在几个动作里选一个。｜玩家目标：达到要求的次数，或撑过这段时间。\n- drag｜拖拽｜玩法：把一个可见对象拖到另一个可见位置，或在可见载体上标出方向。｜适用：画面里存在传递、指向路径，或可以在纸张等载体上做标记。｜玩家目标：完成这次移动或标记。\n- hold_release｜按住后松开｜玩法：先按住，在动作到达合适的程度时松开。松早了力度不够，松晚了也错过。｜适用：投篮、拉弓、踢球蓄力。球可以已经在手里，手臂不必先举到顶。｜玩家目标：在最高点或满蓄力时松开。\n- swipe｜短滑｜玩法：手指快速滑向一个方向，表示跳、翻滚或换到旁边的位置。滑的是方向，不是把物体拖到落点。｜适用：车或人正在前进，障碍从某一侧或上方接近，用一次方向输入躲开。｜玩家目标：滑对方向。\n输出字段约定（JSON Schema；由本地验证，辅助说明异常单列警告）：\n{\"type\": \"object\", \"required\": [\"recommendations\"], \"properties\": {\"recommendations\": {\"type\": \"array\", \"maxItems\": 8, \"items\": {\"type\": \"object\", \"properties\": {\"point_id\": {\"type\": \"string\", \"enum\": [\"p1\", \"p2\", \"p3\", \"p4\"]}, \"game_id\": {\"type\": \"string\", \"enum\": [\"tap_object\", \"choice\", \"timing\", \"mash\", \"drag\", \"hold_release\", \"swipe\"]}, \"fit\": {\"type\": \"string\", \"minLength\": 1}, \"player_goal\": {\"type\": \"string\", \"minLength\": 1}, \"player_action\": {\"type\": \"string\", \"minLength\": 1}, \"success\": {\"type\": \"string\", \"minLength\": 1}, \"failure\": {\"type\": \"string\", \"minLength\": 1}, \"feedback\": {\"type\": \"string\", \"minLength\": 1}, \"title\": {\"type\": \"string\", \"minLength\": 1}, \"difference\": {\"type\": \"string\", \"minLength\": 1}}, \"required\": [\"point_id\", \"game_id\", \"fit\", \"player_goal\", \"player_action\", \"success\", \"failure\", \"feedback\"]}}, \"abstentions\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"required\": [\"point_id\", \"reason\"], \"properties\": {\"point_id\": {\"type\": \"string\", \"enum\": [\"p1\", \"p2\", \"p3\", \"p4\"]}, \"reason\": {\"type\": \"string\", \"minLength\": 1}}}}}}\n\npoint_id=p1；observation_id=e2；实际画面时间=4.000000秒；请求画面位置=4.000000秒。\n旧机会（待核实）：玩家参与蓝衣男性的接球行为，控制双手合拢的时机与位置精度，目标是准确承接即将传来的篮球。\n旧理由（待核实）：蓝衣男性双臂抬至胸前、手掌相对呈明确接球预备姿态，红衣女性持球未动且视线锁定其背部，表明传球即将发生；当前画面处于动作发起前的关键准备阶段，具备清晰的接收意图与空间关系。\n原定位事件（待核实，调整后可能失效）：蓝衣男性双臂抬起至胸前，双手合拢呈接球姿势；红衣女性仍持球未动，保持原站位，注视蓝衣男性。\n原事件依据（待核实）：蓝衣男性手臂抬高、手掌相对，肩部微张；红衣女性持球姿态未变，视线方向指向蓝衣男性背部。\n\npoint_id=p2；observation_id=e3；实际画面时间=6.000000秒；请求画面位置=6.000000秒。\n旧机会（待核实）：玩家参与蓝衣男性的投篮动作，控制举球高度与释放时机，目标是完成一次稳定出手。\n旧理由（待核实）：蓝衣男性已持球完成举球至标准投篮姿势（肘弯约90度、手腕后仰），红衣女性双手空置且目光跟随，证实传球已完成；画面定格在蓄力结束、尚未释放的临界点，符合把握释放时机的操作窗口。\n原定位事件（待核实，调整后可能失效）：蓝衣男性双臂向上伸展，右手在上左手辅助，呈标准投篮举球姿势；篮球已不在红衣女性手中，空中轨迹未见，推测刚完成传球。\n原事件依据（待核实）：蓝衣男性手臂完全上举，肘关节弯曲约90度，手腕后仰；红衣女性双手空置，身体仍微屈，目光跟随蓝衣男性动作。\n\npoint_id=p3；observation_id=e6；实际画面时间=12.000000秒；请求画面位置=12.000000秒。\n旧机会（待核实）：玩家参与蓝衣男性的二次投篮准备，控制对反弹球的拾取时机与举球方向调整，目标是将弹起的篮球重新置于投篮起始位置。\n旧理由（待核实）：篮球刚落地反弹至其右前方地面，蓝衣男性已举臂呈二次投篮预备姿态（右手高举、左手支撑右肘），身体朝向篮筐；可见球与人距离适中、运动轨迹可预测，支持玩家介入拾球与对准环节。\n原定位事件（待核实，调整后可能失效）：蓝衣男性再次举臂，右手高举过头，左手辅助置于右肘下方，呈二次投篮准备姿势；篮球已落地反弹，位于其右前方地面；红衣女性仍站立，注视蓝衣男性。\n原事件依据（待核实）：蓝衣男性右臂高举、手掌张开，左臂支撑右肘；篮球在地面弹起，位于其右脚外侧约半米处；红衣女性姿态未变。\n\npoint_id=p4；observation_id=e7；实际画面时间=14.000000秒；请求画面位置=14.000000秒。\n旧机会（待核实）：玩家参与蓝衣男性的投篮释放环节，控制单手托球的稳定性和出手方向微调，目标是将球精准送入篮筐。\n旧理由（待核实）：蓝衣男性右手单手托球至头部高度，手臂垂直上举，篮球正对篮筐中心，篮筐清晰可见；该姿态为投篮最后准备阶段，球体稳定、方向明确，适合玩家介入释放决策与细微方向修正。\n原定位事件（待核实，调整后可能失效）：蓝衣男性右手单手托住刚弹起的篮球，手臂伸直向上；篮球位于其右手掌心，高度约与头部齐平；镜头略微右移，篮筐更清晰可见，篮球正对篮筐方向。\n原事件依据（待核实）：蓝衣男性右手完全展开承托篮球，手臂垂直上举；篮球表面纹理清晰，位于画面中央偏右；篮筐在右上角，球与篮筐中心大致对齐。",
+  "preprocess_s": 0.273,
+  "requested_response_format": {
+    "type": "json_object"
+  },
+  "api_attempts": [
+    {
+      "response_format": {
+        "type": "json_object"
+      },
+      "request_bytes": 258462
+    }
+  ],
+  "request_bytes": 258462,
+  "request_options": {
+    "fps": 2.0,
+    "response_format": {
+      "type": "json_object"
+    },
+    "max_tokens": 4096,
+    "enable_thinking": false
+  },
+  "api_roundtrip_s": 28.296,
+  "raw_response": {
+    "choices": [
+      {
+        "message": {
+          "content": "{\n  \"recommendations\": [\n    {\n      \"point_id\": \"p1\",\n      \"game_id\": \"timing\",\n      \"fit\": \"蓝衣男性已呈标准接球预备姿态，红衣女性持球锁定其背部，传球即将发生；玩家需在球到达手部区域的极短窗口内完成合拢动作\",\n      \"player_goal\": \"在球接触手掌前精准合拢双手完成接球\",\n      \"player_action\": \"在画面中篮球即将进入双手范围时按下按钮\",\n      \"success\": \"按键时机使双手闭合恰好包裹住球体\",\n      \"failure\": \"过早合拢导致漏接，过晚则球已弹开或脱手\",\n      \"feedback\": \"接球成功时显示‘稳稳接住’并触发自然持球过渡动画；失败时球弹飞并伴随轻微失误音效\",\n      \"title\": \"精准接球时机\",\n      \"difference\": \"聚焦于毫秒级反应窗口的把握，而非选择接球方式或对象\"\n    },\n    {\n      \"point_id\": \"p2\",\n      \"game_id\": \"hold_release\",\n      \"fit\": \"蓝衣男性已完成举球至标准投篮姿势（肘90度、手腕后仰），球已稳定持于出手前临界点，符合蓄力-释放模型\",\n      \"player_goal\": \"完成一次力度与时机协调的投篮出手\",\n      \"player_action\": \"按住屏幕蓄力，当手臂高度与手腕角度达到理想状态时松开\",\n      \"success\": \"松开时机对应模拟的‘满蓄力+最佳释放角’区间\",\n      \"failure\": \"过早松开导致力量不足、弧线偏低；过晚则手腕过度后仰造成拨球失误\",\n      \"feedback\": \"松开后根据力度与时机组合给出‘力量适中/偏弱/过猛’评价，并驱动球体以对应轨迹飞向篮筐\",\n      \"title\": \"蓄力投篮\",\n      \"difference\": \"强调持续按压积累与精确释放的配合，区别于仅选方向或仅点一下的玩法\"\n    },\n    {\n      \"point_id\": \"p3\",\n      \"game_id\": \"drag\",\n      \"fit\": \"篮球刚反弹落地位于蓝衣男性右前方地面，其已举臂呈二次投篮预备姿态；玩家可介入拾球与对准环节，将球拖至手中位置\",\n      \"player_goal\": \"将反弹球准确移入持球起始位置，完成二次进攻准备\",\n      \"player_action\": \"用手指拖动地面上的篮球，将其移至蓝衣男性右手掌心区域\",\n      \"success\": \"篮球被拖入角色手部碰撞区并触发持球动画\",\n      \"failure\": \"拖动路径偏离手部区域，球滑出边界或触地停滞\",\n      \"feedback\": \"成功时角色自然屈膝拾球并转入举球姿势；失败时球继续滚动并提示‘再试一次’\",\n      \"title\": \"拾球对准\",\n      \"difference\": \"以空间移动操作表达‘拾取+定位’行为，不同于单纯时机判断或点击确认\"\n    },\n    {\n      \"point_id\": \"p4\",\n      \"game_id\": \"swipe\",\n      \"fit\": \"蓝衣男性单手托球正对篮筐，手臂垂直上举，球体稳定；此时微调出手方向（左/右/直）可影响进筐概率，适合用短滑输入表达细微修正\",\n      \"player_goal\": \"在出手前完成一次精准的方向微调，提升命中率\",\n      \"player_action\": \"向左、右或保持中线短滑，决定球出手瞬间的横向偏移方向\",\n      \"success\": \"滑动方向与篮筐实际偏移需求匹配，球沿修正后轨迹入网\",\n      \"failure\": \"滑动方向错误或未滑动，导致球偏出篮筐\",\n      \"feedback\": \"滑动后出现方向指示光标，出手时显示‘微调成功’或‘偏左/右’提示，并呈现对应飞行轨迹\",\n      \"title\": \"出手方向微调\",\n      \"difference\": \"以方向性滑动参与执行细节，而非决定是否投篮或换人等策略选择\"\n    }\n  ],\n  \"abstentions\": []\n}",
+          "reasoning_content": "",
+          "role": "assistant"
+        },
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 4852,
+      "completion_tokens": 933,
+      "total_tokens": 5785,
+      "completion_tokens_details": {
+        "text_tokens": 933
+      },
+      "prompt_tokens_details": {
+        "image_tokens": 1352,
+        "text_tokens": 3500,
+        "cached_tokens": 0
+      }
+    },
+    "created": 1792659807,
+    "system_fingerprint": null,
+    "model": "qwen3-vl-plus",
+    "id": "chatcmpl-b1e0ab0e-80ac-99ea-b432-3f3752e1de3a"
+  },
+  "raw_text": "{\n  \"recommendations\": [\n    {\n      \"point_id\": \"p1\",\n      \"game_id\": \"timing\",\n      \"fit\": \"蓝衣男性已呈标准接球预备姿态，红衣女性持球锁定其背部，传球即将发生；玩家需在球到达手部区域的极短窗口内完成合拢动作\",\n      \"player_goal\": \"在球接触手掌前精准合拢双手完成接球\",\n      \"player_action\": \"在画面中篮球即将进入双手范围时按下按钮\",\n      \"success\": \"按键时机使双手闭合恰好包裹住球体\",\n      \"failure\": \"过早合拢导致漏接，过晚则球已弹开或脱手\",\n      \"feedback\": \"接球成功时显示‘稳稳接住’并触发自然持球过渡动画；失败时球弹飞并伴随轻微失误音效\",\n      \"title\": \"精准接球时机\",\n      \"difference\": \"聚焦于毫秒级反应窗口的把握，而非选择接球方式或对象\"\n    },\n    {\n      \"point_id\": \"p2\",\n      \"game_id\": \"hold_release\",\n      \"fit\": \"蓝衣男性已完成举球至标准投篮姿势（肘90度、手腕后仰），球已稳定持于出手前临界点，符合蓄力-释放模型\",\n      \"player_goal\": \"完成一次力度与时机协调的投篮出手\",\n      \"player_action\": \"按住屏幕蓄力，当手臂高度与手腕角度达到理想状态时松开\",\n      \"success\": \"松开时机对应模拟的‘满蓄力+最佳释放角’区间\",\n      \"failure\": \"过早松开导致力量不足、弧线偏低；过晚则手腕过度后仰造成拨球失误\",\n      \"feedback\": \"松开后根据力度与时机组合给出‘力量适中/偏弱/过猛’评价，并驱动球体以对应轨迹飞向篮筐\",\n      \"title\": \"蓄力投篮\",\n      \"difference\": \"强调持续按压积累与精确释放的配合，区别于仅选方向或仅点一下的玩法\"\n    },\n    {\n      \"point_id\": \"p3\",\n      \"game_id\": \"drag\",\n      \"fit\": \"篮球刚反弹落地位于蓝衣男性右前方地面，其已举臂呈二次投篮预备姿态；玩家可介入拾球与对准环节，将球拖至手中位置\",\n      \"player_goal\": \"将反弹球准确移入持球起始位置，完成二次进攻准备\",\n      \"player_action\": \"用手指拖动地面上的篮球，将其移至蓝衣男性右手掌心区域\",\n      \"success\": \"篮球被拖入角色手部碰撞区并触发持球动画\",\n      \"failure\": \"拖动路径偏离手部区域，球滑出边界或触地停滞\",\n      \"feedback\": \"成功时角色自然屈膝拾球并转入举球姿势；失败时球继续滚动并提示‘再试一次’\",\n      \"title\": \"拾球对准\",\n      \"difference\": \"以空间移动操作表达‘拾取+定位’行为，不同于单纯时机判断或点击确认\"\n    },\n    {\n      \"point_id\": \"p4\",\n      \"game_id\": \"swipe\",\n      \"fit\": \"蓝衣男性单手托球正对篮筐，手臂垂直上举，球体稳定；此时微调出手方向（左/右/直）可影响进筐概率，适合用短滑输入表达细微修正\",\n      \"player_goal\": \"在出手前完成一次精准的方向微调，提升命中率\",\n      \"player_action\": \"向左、右或保持中线短滑，决定球出手瞬间的横向偏移方向\",\n      \"success\": \"滑动方向与篮筐实际偏移需求匹配，球沿修正后轨迹入网\",\n      \"failure\": \"滑动方向错误或未滑动，导致球偏出篮筐\",\n      \"feedback\": \"滑动后出现方向指示光标，出手时显示‘微调成功’或‘偏左/右’提示，并呈现对应飞行轨迹\",\n      \"title\": \"出手方向微调\",\n      \"difference\": \"以方向性滑动参与执行细节，而非决定是否投篮或换人等策略选择\"\n    }\n  ],\n  \"abstentions\": []\n}",
+  "usage": {
+    "prompt_tokens": 4852,
+    "completion_tokens": 933,
+    "total_tokens": 5785,
+    "completion_tokens_details": {
+      "text_tokens": 933
+    },
+    "prompt_tokens_details": {
+      "image_tokens": 1352,
+      "text_tokens": 3500,
+      "cached_tokens": 0
+    }
+  },
+  "finish_reason": "stop",
+  "media_tokens": 1352,
+  "video_tokens": 1352,
+  "audio_tokens": 0,
+  "audio_verification": "not_sent",
+  "media_verification": "confirmed",
+  "analysis": {
+    "recommendations": [
+      {
+        "observation_id": "e2",
+        "event_id": "e2",
+        "time_s": 4.0,
+        "opportunity": "玩家参与蓝衣男性的接球行为，控制双手合拢的时机与位置精度，目标是准确承接即将传来的篮球。",
+        "reason": "蓝衣男性双臂抬至胸前、手掌相对呈明确接球预备姿态，红衣女性持球未动且视线锁定其背部，表明传球即将发生；当前画面处于动作发起前的关键准备阶段，具备清晰的接收意图与空间关系。",
+        "point_id": "p1",
+        "original_time_s": 4.0,
+        "requested_time_s": 4,
+        "fit": "蓝衣男性已呈标准接球预备姿态，红衣女性持球锁定其背部，传球即将发生；玩家需在球到达手部区域的极短窗口内完成合拢动作",
+        "player_goal": "在球接触手掌前精准合拢双手完成接球",
+        "player_action": "在画面中篮球即将进入双手范围时按下按钮",
+        "success": "按键时机使双手闭合恰好包裹住球体",
+        "failure": "过早合拢导致漏接，过晚则球已弹开或脱手",
+        "feedback": "接球成功时显示‘稳稳接住’并触发自然持球过渡动画；失败时球弹飞并伴随轻微失误音效",
+        "option_id": "p1-o1",
+        "game_id": "timing",
+        "game_name": "时机操作",
+        "title": "精准接球时机",
+        "difference": "聚焦于毫秒级反应窗口的把握，而非选择接球方式或对象"
+      },
+      {
+        "observation_id": "e3",
+        "event_id": "e3",
+        "time_s": 6.0,
+        "opportunity": "玩家参与蓝衣男性的投篮动作，控制举球高度与释放时机，目标是完成一次稳定出手。",
+        "reason": "蓝衣男性已持球完成举球至标准投篮姿势（肘弯约90度、手腕后仰），红衣女性双手空置且目光跟随，证实传球已完成；画面定格在蓄力结束、尚未释放的临界点，符合把握释放时机的操作窗口。",
+        "point_id": "p2",
+        "original_time_s": 6.0,
+        "requested_time_s": 6,
+        "fit": "蓝衣男性已完成举球至标准投篮姿势（肘90度、手腕后仰），球已稳定持于出手前临界点，符合蓄力-释放模型",
+        "player_goal": "完成一次力度与时机协调的投篮出手",
+        "player_action": "按住屏幕蓄力，当手臂高度与手腕角度达到理想状态时松开",
+        "success": "松开时机对应模拟的‘满蓄力+最佳释放角’区间",
+        "failure": "过早松开导致力量不足、弧线偏低；过晚则手腕过度后仰造成拨球失误",
+        "feedback": "松开后根据力度与时机组合给出‘力量适中/偏弱/过猛’评价，并驱动球体以对应轨迹飞向篮筐",
+        "option_id": "p2-o1",
+        "game_id": "hold_release",
+        "game_name": "按住后松开",
+        "title": "蓄力投篮",
+        "difference": "强调持续按压积累与精确释放的配合，区别于仅选方向或仅点一下的玩法"
+      },
+      {
+        "observation_id": "e6",
+        "event_id": "e6",
+        "time_s": 12.0,
+        "opportunity": "玩家参与蓝衣男性的二次投篮准备，控制对反弹球的拾取时机与举球方向调整，目标是将弹起的篮球重新置于投篮起始位置。",
+        "reason": "篮球刚落地反弹至其右前方地面，蓝衣男性已举臂呈二次投篮预备姿态（右手高举、左手支撑右肘），身体朝向篮筐；可见球与人距离适中、运动轨迹可预测，支持玩家介入拾球与对准环节。",
+        "point_id": "p3",
+        "original_time_s": 12.0,
+        "requested_time_s": 12,
+        "fit": "篮球刚反弹落地位于蓝衣男性右前方地面，其已举臂呈二次投篮预备姿态；玩家可介入拾球与对准环节，将球拖至手中位置",
+        "player_goal": "将反弹球准确移入持球起始位置，完成二次进攻准备",
+        "player_action": "用手指拖动地面上的篮球，将其移至蓝衣男性右手掌心区域",
+        "success": "篮球被拖入角色手部碰撞区并触发持球动画",
+        "failure": "拖动路径偏离手部区域，球滑出边界或触地停滞",
+        "feedback": "成功时角色自然屈膝拾球并转入举球姿势；失败时球继续滚动并提示‘再试一次’",
+        "option_id": "p3-o1",
+        "game_id": "drag",
+        "game_name": "拖拽",
+        "title": "拾球对准",
+        "difference": "以空间移动操作表达‘拾取+定位’行为，不同于单纯时机判断或点击确认"
+      },
+      {
+        "observation_id": "e7",
+        "event_id": "e7",
+        "time_s": 14.0,
+        "opportunity": "玩家参与蓝衣男性的投篮释放环节，控制单手托球的稳定性和出手方向微调，目标是将球精准送入篮筐。",
+        "reason": "蓝衣男性右手单手托球至头部高度，手臂垂直上举，篮球正对篮筐中心，篮筐清晰可见；该姿态为投篮最后准备阶段，球体稳定、方向明确，适合玩家介入释放决策与细微方向修正。",
+        "point_id": "p4",
+        "original_time_s": 14.0,
+        "requested_time_s": 14,
+        "fit": "蓝衣男性单手托球正对篮筐，手臂垂直上举，球体稳定；此时微调出手方向（左/右/直）可影响进筐概率，适合用短滑输入表达细微修正",
+        "player_goal": "在出手前完成一次精准的方向微调，提升命中率",
+        "player_action": "向左、右或保持中线短滑，决定球出手瞬间的横向偏移方向",
+        "success": "滑动方向与篮筐实际偏移需求匹配，球沿修正后轨迹入网",
+        "failure": "滑动方向错误或未滑动，导致球偏出篮筐",
+        "feedback": "滑动后出现方向指示光标，出手时显示‘微调成功’或‘偏左/右’提示，并呈现对应飞行轨迹",
+        "option_id": "p4-o1",
+        "game_id": "swipe",
+        "game_name": "短滑",
+        "title": "出手方向微调",
+        "difference": "以方向性滑动参与执行细节，而非决定是否投篮或换人等策略选择"
+      }
+    ],
+    "abstentions": [],
+    "warnings": [],
+    "limitations": []
+  },
+  "validation_warnings": [],
+  "validation_status": "passed",
+  "cost": null,
+  "cost_note": "未设置单价；按返回的 usage 核算。",
+  "total_s": 28.575,
+  "record_file": "results/qwen3-vl-plus/S05_传球投篮__frames__20261022_第三步_2.json"
+}

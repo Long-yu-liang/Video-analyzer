@@ -1,0 +1,14 @@
+{
+  "version": "day3-design-v2",
+  "playback": "暂停原片，叠加控件；反馈结束后继续原片，小游戏结果不改变视频剧情",
+  "defaults": {
+    "tap_object": {"timeout_s": 8, "feedback_s": 1},
+    "choice": {"timeout_s": 8, "feedback_s": 1, "choices": ["选项一", "选项二"]},
+    "timing": {"timeout_s": 8, "feedback_s": 1, "period_s": 2, "zone_min": 0.65, "zone_max": 0.85},
+    "hold_release": {"timeout_s": 8, "feedback_s": 1, "charge_s": 2, "zone_min": 0.65, "zone_max": 0.85},
+    "mash": {"timeout_s": 5, "feedback_s": 1, "clicks": 10},
+    "drag": {"timeout_s": 8, "feedback_s": 1},
+    "swipe": {"timeout_s": 8, "feedback_s": 1, "direction": "right", "distance_ratio": 0.1}
+  },
+  "anchor_roles": {"tap_object": ["target"], "drag": ["start", "destination"]}
+}

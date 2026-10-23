@@ -2,9 +2,11 @@
 
 ## Project Structure & Module Organization
 
-- `demo/app.py`: Python HTTP server, media preprocessing, model requests, validation, and result storage. `demo/start.py` is an alternative launcher.
-- `demo/web/index.html`: browser interface with inline CSS and JavaScript; no frontend build step.
-- `demo/tests/`: Python tests and the Node.js UI smoke test.
+- `demo/app.py`: stable launcher and compatibility facade; `demo/start.py` is an alternative launcher. Backend implementations live in `demo/video_analyzer/`.
+- `demo/video_analyzer/application.py`: workflow orchestration. Functional packages separate `media/`, `models/`, `catalog/`, `contracts/`, `gameplay/`, `projects/`, `storage/`, and HTTP `web/`.
+- `demo/web/index.html`: page structure; scripts and styles live under `demo/web/assets/js/` and `assets/css/`. No frontend build step.
+- `demo/tools/evaluation/` and `demo/tools/recovery/`: explicit experiment, analysis, and offline recovery commands. Never execute paid experiments during refactors.
+- `demo/tests/`: Python tests; `frontend/` contains Node tests and `fixtures/` contains browser fixture servers. `demo/tests/ui_smoke.js` remains a compatibility entry.
 - `prompts/`: historical `vN.txt` prompts and staged prompts such as `v14/events.txt` and `v13/opportunities.txt`.
 - `mp4-example/`: sample videos. `results/<model>/` stores original inference records. `day1/` and `day2/` contain evaluations, annotations, and reports.
 

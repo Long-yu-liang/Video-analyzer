@@ -356,7 +356,9 @@ class PipelineChecks(unittest.TestCase):
                 page = response.read()
                 self.assertIn('尚未调用模型'.encode(), page)
                 self.assertIn('候选交互点'.encode(), page)
-                self.assertIn('point.time_s'.encode(), page)
+                self.assertIn(b'/assets/js/app.js', page)
+            with urlopen(base+'/assets/js/app.js') as response:
+                self.assertIn(b'point.time_s', response.read())
             with urlopen(base+'/config') as response:
                 configuration = json.load(response)
                 token = configuration['token']
@@ -389,7 +391,7 @@ class PipelineChecks(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which('node'), 'Node.js not installed')
     def test_ui_candidate_click_seeks_video_and_empty_state(self):
-        script = Path(__file__).with_name('ui_smoke.js')
+        script = Path(__file__).parent / 'frontend/ui_smoke.js'
         result = subprocess.run(['node', str(script)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 

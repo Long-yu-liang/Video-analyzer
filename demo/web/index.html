@@ -1,6 +1,17 @@
 <!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>视频分析 · DAY 03</title>
-<style>:root{color-scheme:light;font-family:system-ui,"Microsoft YaHei",sans-serif;color:#23362f;background:#eeede7}*{box-sizing:border-box}body{max-width:1160px;margin:36px auto;padding:0 24px}header{border-top:5px solid #23362f;padding-top:24px}small{color:#a64a2f;letter-spacing:.1em}h1{font-size:36px;margin:12px 0}p{line-height:1.7;color:#647269}.grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:24px}section{background:#fffefb;padding:24px;border:1px solid #d9dfd6;border-radius:12px}label{display:block;margin:15px 0 7px}input,select,button{font:inherit;padding:10px;border:1px solid #c4cec4;border-radius:6px;background:white;max-width:100%}select{width:100%}button{cursor:pointer;background:#23362f;color:white;margin:16px 8px 0 0}button.ghost{background:#f1f4ed;color:#23362f}video{width:100%;max-height:340px;background:#17251f;border-radius:8px;margin-top:16px}.note{background:#f1f4ed;padding:12px;border-radius:6px;font-size:14px}.event{width:100%;text-align:left;background:#f1f4ed;color:#23362f;margin:8px 0;padding:14px}.event span{display:block;font-size:13px;color:#647269;margin-top:8px}.point-tools,.choices{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}.point-tools input[type=number]{width:96px;margin:0;padding:8px}.choices button,.point-tools button{margin:0}textarea{font:inherit;width:100%;min-height:52px;padding:8px;border:1px solid #c4cec4;border-radius:6px;margin-top:8px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:340px;overflow:auto}.status{min-height:28px;color:#a64a2f}h2{font-size:21px}.prompts{margin-top:24px}.prompt-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}@media(max-width:760px){.grid,.prompt-grid{grid-template-columns:1fr}h1{font-size:28px}}</style>
-<header><small>VIDEO ANALYZER / DAY 03</small><h1>从交互点选择小游戏</h1><p>查看候选交互点，调整暂停位置，让 AI 在预设玩法中推荐，再接受、修改或放弃。</p></header>
+<link rel="stylesheet" href="/assets/css/base.css">
+<link rel="stylesheet" href="/assets/css/workbench.css">
+<header><small>VIDEO ANALYZER / DAY 03</small><h1>视频交互编排工作台</h1><p>分析画面、选择玩法、编排自己的交互方案。仅完善功能，不改变现有模型分析与推荐策略。</p></header>
+<div class="wb-project-bar">
+  <div class="wb-project-tools"><label>项目名称<input id="projectName" maxlength="120" aria-label="项目名称"></label>
+    <button id="saveProject" type="button">保存项目</button><button id="saveProjectCopy" type="button" class="ghost">另存副本</button><button id="newProject" type="button" class="ghost">新建项目</button>
+    <select id="projectList" aria-label="已保存项目"></select><button id="openProject" type="button" class="ghost">打开项目</button>
+    <button id="backupProject" type="button" class="ghost">草稿备份</button></div>
+  <details><summary>导入已有分析结果 / 恢复草稿备份（不调用模型）</summary><label>选择原始分析 JSON 或本工作台的草稿备份<input id="importRecord" type="file" accept="application/json,.json"></label></details>
+  <p id="projectStatus" role="status" aria-live="polite"></p><p id="wbMediaHint"></p>
+  <nav class="wb-tabs" aria-label="工作台视图"><button type="button" class="ghost" data-wb-tab="analysis">1. 分析与选点</button>
+    <button type="button" class="ghost" data-wb-tab="design">2. 玩法比较与编辑</button><button type="button" class="ghost" data-wb-tab="arrange">3. 编排与描述预览</button></nav>
+</div>
 <div class="note" id="configState">正在检查配置…</div>
 <section class="prompts"><h2>提示词</h2>
 <div class="prompt-grid">
@@ -9,9 +20,9 @@
 <div><label for="gameplayPrompt">玩法推荐</label><select id="gameplayPrompt"></select></div>
 </div>
 <p class="note" id="flowHint">第一步使用所选模型、输入方式和采样率。事件识别选 v14 时，超过 25 秒会分段。</p>
-<details id="promptDetails" open><summary>查看所选提示词全文</summary><div id="promptPreview"></div></details>
+<details id="promptDetails"><summary>查看所选提示词全文</summary><div id="promptPreview"></div></details>
 </section>
-<main class="grid"><section><h2>01 / 输入</h2>
+<main class="grid"><section id="inputPanel"><h2>01 / 输入与视频回看</h2>
 <label for="sample">mp4-example</label><select id="sample"></select>
 <label for="file">或上传其他 MP4 · 最长 60 秒 / 12 MiB</label><input id="file" type="file" accept="video/mp4">
 <video id="video" controls></video>
@@ -20,270 +31,14 @@
 <label for="fps">第一步采样率</label><select id="fps"><option>0.5</option><option>1</option><option selected>2</option></select>
 <button id="recognize" disabled>第一步：识别可观察事件</button><button id="suggest" disabled>第二步：寻找交互机会</button><button id="recommend" disabled>第三步：推荐小游戏</button><button id="reset" class="ghost" type="button">刷新重置</button><p class="note" id="reviewHint">先识别事件。采样率和输入方式只用于第一步。可以取消勾选失实事件，再运行第二步。</p>
 <div class="status" id="status" role="status" aria-live="polite"></div></section>
-<section><h2>02 / 候选交互点</h2><p id="summary">尚未调用模型。没有预置分析结果。</p><div id="metrics"></div><div id="points"></div><h2>03 / 可观察事件与审核</h2><div id="events"></div><ul id="limitations"></ul><h2>04 / 玩法选择</h2><div class="note" id="catalogNote">正在加载小游戏目录…</div><div id="gameplay"></div><button id="saveBrief" disabled>保存玩法描述</button><button id="download" disabled>导出当前完整记录</button><details><summary>查看当前模型原始响应与用量</summary><pre id="raw">暂无</pre></details><p class="note">点击事件或候选点可回看原片。第二步一次接收多个画面，提示词要求不使用后续信息，但不能做到严格隔离；请核实每条理由。第三步只在预设玩法中推荐，接受或修改后的描述才留给下一步。</p></section></main>
-<script>
-const $=id=>document.getElementById(id);let config,record,eventRecord,opportunityRecord,gameplayRecord,blobURL,busy=false,reviewChecks=[],pointControls=[],selectionDrafts=[];
-const selectedEventIds=()=>reviewChecks.filter(item=>item.checked).map(item=>item.value);
-const selectedPointIds=()=>pointControls.filter(item=>item.include.checked).map(item=>item.pointId);
-function clearGameplay(){gameplayRecord=null;selectionDrafts=[];$('gameplay').replaceChildren();}
-function adjustedTime(control){
-  const duration=Number(opportunityRecord?.metadata?.duration_s);
-  let value=Number(control.time.value);
-  if(!Number.isFinite(value))value=control.point.time_s;
-  if(Number.isFinite(duration))value=Math.min(duration,Math.max(0,value));
-  return value;
-}
-function renderCatalog(){
-  const types=config?.games?.types||[];
-  $('catalogNote').replaceChildren();
-  if(!types.length){$('catalogNote').textContent='小游戏目录未加载。';return}
-  for(const type of types){
-    const line=document.createElement('p');
-    line.textContent=`${type.name}（${type.id}）：${type.play}适用：${type.situations}目标：${type.player_goal}`;
-    $('catalogNote').append(line);
-  }
-}
-function renderPromptPreview(){
-  $('promptPreview').replaceChildren();
-  for(const [label,stage,version] of [['事件识别','events',$('eventPrompt').value],['机会发现','opportunities',$('opportunityPrompt').value],['玩法推荐','gameplay',$('gameplayPrompt').value]]){
-    const item=(config.stage_prompts?.[stage]||[]).find(entry=>entry.version===version);
-    const title=document.createElement('h3');title.textContent=item?`${label} · ${item.path}`:`${label}未选择`;
-    const body=document.createElement('pre');body.textContent=item?item.content:'此步骤没有可用提示词。';
-    $('promptPreview').append(title,body);
-  }
-}
-function fillPromptSelect(id,items){
-  const select=$(id);
-  select.replaceChildren(...items.map(item=>{const option=document.createElement('option');option.value=item.version;option.textContent=`${item.version} · ${item.path}`;return option}));
-  if(items.length)select.value=items[items.length-1].version;
-}
-function applyInitialChoices(){
-  const names=Object.keys(config.models||{});
-  if(config.models?.['qwen3-vl-plus'])$('model').value='qwen3-vl-plus';
-  else if(names.length)$('model').value=names[0];
-  $('mode').value='direct';
-  $('fps').value='2';
-  const stages=config.stage_prompts||{};
-  fillPromptSelect('eventPrompt',stages.events||[]);
-  fillPromptSelect('opportunityPrompt',stages.opportunities||[]);
-  fillPromptSelect('gameplayPrompt',stages.gameplay||[]);
-}
-function clearResults(){
-  record=null;eventRecord=null;opportunityRecord=null;reviewChecks=[];pointControls=[];clearGameplay();
-  $('download').disabled=true;$('summary').textContent='尚未调用模型。没有预置分析结果。';
-  $('points').replaceChildren();$('events').replaceChildren();$('metrics').textContent='';$('limitations').replaceChildren();$('raw').textContent='暂无';
-  $('reviewHint').textContent='先识别事件。采样率和输入方式只用于第一步。可以取消勾选失实事件，再运行第二步。';
-}
-function ready(){
-  if(!config)return;
-  const hasVideo=!!$('sample').value||!!$('file').files.length;
-  const hasModel=!!$('model').value&&!!config.models?.[$('model').value]&&!!config.configured.beeroute;
-  $('recognize').disabled=busy||!hasVideo||!hasModel||!$('eventPrompt').value;
-  $('suggest').disabled=busy||!hasVideo||!hasModel||!eventRecord||!selectedEventIds().length||!$('opportunityPrompt').value;
-  $('recommend').disabled=busy||!hasVideo||!hasModel||!opportunityRecord||!selectedPointIds().length||!$('gameplayPrompt').value;
-  $('saveBrief').disabled=busy||!gameplayRecord||!selectionDrafts.length;
-  $('reset').disabled=busy;
-  $('model').disabled=$('mode').disabled=$('fps').disabled=busy;
-  $('eventPrompt').disabled=$('opportunityPrompt').disabled=$('gameplayPrompt').disabled=busy;
-  const sampling=$('mode').value==='frames'?'顺序采样':'直接视频';
-  $('flowHint').textContent=$('eventPrompt').value==='v14'
-    ?`第一步使用 ${$('model').value||'未选模型'}、${sampling}、${$('fps').value} fps。事件识别选 v14 时，超过 25 秒会分段并多次调用。第二步和第三步沿用所选模型，并查看对应画面。`
-    :`第一步使用 ${$('model').value||'未选模型'}、${sampling}、${$('fps').value} fps。第二步和第三步沿用所选模型。`;
-  const key=config.configured.beeroute?'已配置':'待配置 BEEROUTE_API_KEY';
-  const names=Object.keys(config.models||{});
-  $('configState').textContent=names.length?`密钥${key}。事件 ${$('eventPrompt').value||'未选'}，机会 ${$('opportunityPrompt').value||'未选'}，玩法 ${$('gameplayPrompt').value||'未选'}。当前模型 ${$('model').value||'未选'}，结果写入 results/${$('model').value||'模型名'}/。`:'请在 .env 设置 BEEROUTE_MODELS 后重启。';
-}
-fetch('/config').then(r=>r.json()).then(c=>{
-  config=c;
-  const model=$('model');
-  model.replaceChildren(...Object.keys(c.models||{}).map(name=>{const o=document.createElement('option');o.value=o.textContent=name;return o}));
-  applyInitialChoices();
-  const sample=$('sample');
-  const blank=document.createElement('option');blank.value='';blank.textContent='不使用样例，改为上传';
-  sample.replaceChildren(blank,...(c.samples||[]).map(name=>{const o=document.createElement('option');o.value=o.textContent=name;return o}));
-  renderPromptPreview();renderCatalog();ready();
-}).catch(()=>{$('configState').textContent='请在项目根目录运行 python demo/app.py，再访问本地地址。'});
-$('model').onchange=$('mode').onchange=$('fps').onchange=ready;
-for(const id of ['eventPrompt','opportunityPrompt','gameplayPrompt'])$(id).onchange=()=>{renderPromptPreview();ready()};
-$('sample').onchange=async()=>{
-  if(blobURL){URL.revokeObjectURL(blobURL);blobURL=''}
-  $('file').value='';
-  const name=$('sample').value;
-  if(name){$('video').src='/sample?name='+encodeURIComponent(name)}
-  record=null;eventRecord=null;opportunityRecord=null;reviewChecks=[];pointControls=[];clearGameplay();$('reviewHint').textContent='先识别事件。采样率和输入方式只用于第一步。可以取消勾选失实事件，再运行第二步。';$('download').disabled=true;$('summary').textContent=name?('已选择 '+name+'，等待分析。'):'尚未选择视频。';
-  $('points').replaceChildren();$('events').replaceChildren();$('metrics').textContent='';$('limitations').replaceChildren();$('raw').textContent='暂无';ready();
-};
-$('file').onchange=()=>{
-  $('sample').value='';
-  if(blobURL)URL.revokeObjectURL(blobURL);
-  const f=$('file').files[0];
-  if(f){blobURL=URL.createObjectURL(f);$('video').src=blobURL}
-  record=null;eventRecord=null;opportunityRecord=null;reviewChecks=[];pointControls=[];clearGameplay();$('reviewHint').textContent='先识别事件。采样率和输入方式只用于第一步。可以取消勾选失实事件，再运行第二步。';$('download').disabled=true;$('summary').textContent='已选择上传文件，等待分析。';
-  $('points').replaceChildren();$('events').replaceChildren();$('metrics').textContent='';$('limitations').replaceChildren();$('raw').textContent='暂无';ready();
-};
-function videoRequestParams(){
-  const params={};let body;
-  if($('sample').value)params.sample=$('sample').value;
-  else{params.name=$('file').files[0].name;body=$('file').files[0]}
-  return {params,body};
-}
-function renderReviewedEvents(events){
-  $('events').replaceChildren();reviewChecks=[];
-  for(const e of events){
-    const row=document.createElement('div');row.className='event';
-    const box=document.createElement('input');box.type='checkbox';box.checked=true;box.value=e.observation_id;box.onchange=ready;reviewChecks.push(box);
-    const seek=document.createElement('button');seek.type='button';seek.textContent=`${e.observation_s.toFixed(2)} 秒 · ${e.description}`;
-    seek.onclick=()=>{$('video').currentTime=e.observation_s;$('video').pause()};
-    const detail=document.createElement('span');detail.textContent=`区间 ${e.start_s.toFixed(2)}–${e.end_s.toFixed(2)} 秒；画面依据：${e.evidence}；不确定：${e.uncertainty}`;
-    row.append(box,seek,detail);$('events').append(row);
-  }
-  $('reviewHint').textContent=events.length?'请逐条回看；取消勾选失实事件后，再运行第二步。':'第一步未记录事件；不能运行第二步。';
-  ready();
-}
-function renderStagePoints(points,duration){
-  $('points').replaceChildren();pointControls=[];
-  if(!points.length){$('points').textContent='本次未建议交互点。';ready();return}
-  points.forEach((point,index)=>{
-    const pointId=point.point_id||`p${index+1}`;
-    const card=document.createElement('div');card.className='event';
-    const tools=document.createElement('div');tools.className='point-tools';
-    const include=document.createElement('input');include.type='checkbox';include.className='include';include.checked=true;include.onchange=ready;
-    const includeLabel=document.createElement('span');includeLabel.textContent='送入第三步';
-    const timeLabel=document.createElement('span');timeLabel.textContent='暂停位置（秒）';
-    const time=document.createElement('input');time.type='number';time.className='time';time.step='0.1';time.value=Number(point.time_s).toFixed(2);
-    if(Number.isFinite(duration)){time.min='0';time.max=String(duration)}
-    tools.append(include,includeLabel,timeLabel,time);
-    const seek=document.createElement('button');seek.type='button';seek.className='seek';
-    seek.textContent=`${Number(point.time_s).toFixed(2)} 秒 · ${point.opportunity}`;
-    seek.onclick=()=>{$('video').currentTime=adjustedTime({time,point});$('video').pause()};
-    const detail=document.createElement('span');detail.textContent=`事件 ${point.event_id}；原始位置 ${Number(point.time_s).toFixed(2)} 秒；原因：${point.reason}`;
-    card.append(tools,seek,detail);$('points').append(card);
-    pointControls.push({point,pointId,include,time});
-  });
-  ready();
-}
-function renderRecommendations(recommendations){
-  $('gameplay').replaceChildren();selectionDrafts=[];
-  const sent=pointControls.filter(item=>item.include.checked);
-  const byId=Object.fromEntries(recommendations.map(item=>[item.point_id,item]));
-  if(!recommendations.length){const note=document.createElement('p');note.className='empty-recommendation';note.textContent='本次未推荐玩法。';$('gameplay').append(note)}
-  for(const control of sent){
-    const ai=byId[control.pointId]||null;
-    const card=document.createElement('div');card.className='event';
-    const seek=document.createElement('button');seek.type='button';seek.className='seek';
-    seek.textContent=`${adjustedTime(control).toFixed(2)} 秒 · ${control.point.opportunity}`;
-    seek.onclick=()=>{$('video').currentTime=adjustedTime(control);$('video').pause()};
-    const fit=document.createElement('span');fit.className='fit';
-    fit.textContent=ai?`推荐${ai.game_name}：${ai.fit}`:'模型未推荐这个交互点，可以从预设类型里自行选择。';
-    const game=document.createElement('select');game.className='game';
-    for(const type of (config.games?.types||[])){const option=document.createElement('option');option.value=type.id;option.textContent=type.name;game.append(option)}
-    game.value=ai?ai.game_id:(config.games?.types?.[0]?.id||'');
-    const fields=[['goal','玩家目标'],['action','玩家操作'],['success','怎样算完成'],['failure','怎样算未完成'],['feedback','玩家看到的反馈']];
-    const inputs={};
-    const state=document.createElement('span');state.className='choice-state';state.textContent=ai?'待确认':'自行填写';
-    const draft={control,ai,game,inputs,state,status:ai?'pending':'edited'};
-    const markEdited=()=>{if(draft.status==='discarded')return;draft.status='edited';state.textContent='已修改'};
-    game.onchange=markEdited;
-    for(const [key,label] of fields){
-      const box=document.createElement('textarea');box.className=key;box.value=ai?ai[{goal:'player_goal',action:'player_action',success:'success',failure:'failure',feedback:'feedback'}[key]]:'';
-      box.placeholder=label;box.oninput=markEdited;inputs[key]=box;
-    }
-    const accept=document.createElement('button');accept.type='button';accept.className='accept';accept.textContent='接受';
-    accept.onclick=()=>{
-      if(!ai)return;
-      draft.status='accepted';game.value=ai.game_id;
-      inputs.goal.value=ai.player_goal;inputs.action.value=ai.player_action;inputs.success.value=ai.success;inputs.failure.value=ai.failure;inputs.feedback.value=ai.feedback;
-      state.textContent='已接受';ready();
-    };
-    const discard=document.createElement('button');discard.type='button';discard.className='discard';discard.textContent='放弃';
-    discard.onclick=()=>{draft.status='discarded';state.textContent='已放弃';ready()};
-    card.append(seek,fit,game,...fields.map(([key])=>inputs[key]),state,accept,discard);
-    $('gameplay').append(card);selectionDrafts.push(draft);
-  }
-  ready();
-}
-$('recognize').onclick=async()=>{
-  busy=true;ready();$('file').disabled=$('sample').disabled=true;
-  eventRecord=null;opportunityRecord=null;reviewChecks=[];pointControls=[];clearGameplay();$('download').disabled=true;
-  $('events').replaceChildren();$('points').replaceChildren();$('limitations').replaceChildren();$('summary').textContent='第一步：识别事件中…';
-  $('status').textContent=`正在调用 ${$('model').value} 识别画面事件（计费）。`;
-  try{
-    const {params,body}=videoRequestParams();
-    params.version=$('eventPrompt').value;params.model=$('model').value;params.mode=$('mode').value;params.fps=$('fps').value;
-    const response=await fetch('/events?'+new URLSearchParams(params),{method:'POST',headers:{'X-Local-Token':config.token},body});
-    const result=await response.json();record=result;$('raw').textContent=JSON.stringify(result,null,2);$('download').disabled=!result.record_file;
-    if(!response.ok||result.status!=='success')throw Error(result.error||'事件识别失败');
-    eventRecord=result;$('summary').textContent=result.analysis.summary;
-    const segmentInfo=result.segments?` · 成功片段 ${result.segments.filter(item=>item.status==='success').length} / 请求 ${result.segments.length}`:'';
-    $('metrics').textContent=`第一步 ${result.model} · ${result.mode} · ${result.fps} fps · ${result.video_name} · ${result.prompt_file}${segmentInfo} · ${result.total_s}s · ${result.record_file}`;
-    renderReviewedEvents(result.analysis.events);
-    for(const item of result.analysis.limitations){const li=document.createElement('li');li.textContent=item;$('limitations').append(li)}
-    $('status').textContent=`事件已保存${segmentInfo}。请回看并审核，再点击第二步。`;
-  }catch(error){$('summary').textContent='第一步未获得通过校验的事件。';$('status').textContent=error.message}
-  finally{busy=false;$('file').disabled=$('sample').disabled=false;ready()}
-};
-$('suggest').onclick=async()=>{
-  const selected=selectedEventIds();if(!eventRecord||!selected.length)return;
-  busy=true;opportunityRecord=null;pointControls=[];clearGameplay();ready();$('file').disabled=$('sample').disabled=true;
-  $('points').replaceChildren();$('status').textContent=`正在调用 ${$('model').value} 寻找参与机会（计费）。`;
-  try{
-    const {params,body}=videoRequestParams();params.record_id=eventRecord.record_id;params.selected=selected.join(',');params.version=$('opportunityPrompt').value;params.model=$('model').value;
-    const response=await fetch('/opportunities?'+new URLSearchParams(params),{method:'POST',headers:{'X-Local-Token':config.token},body});
-    const result=await response.json();record=result;$('raw').textContent=JSON.stringify(result,null,2);$('download').disabled=!result.record_file;
-    if(!response.ok||result.status!=='success')throw Error(result.error||'交互机会分析失败');
-    opportunityRecord=result;
-    renderStagePoints(result.analysis.interaction_points,result.metadata&&result.metadata.duration_s);
-    $('metrics').textContent=`第二步 ${result.model} · ${result.video_name} · ${result.prompt_file} · ${result.total_s}s · ${result.record_file}；第一步 ${eventRecord.record_file}`;
-    $('status').textContent='候选已保存。点击每个位置回看，核查理由是否符合该画面。';
-  }catch(error){$('status').textContent=error.message}
-  finally{busy=false;$('file').disabled=$('sample').disabled=false;ready()}
-};
-$('recommend').onclick=async()=>{
-  const selected=selectedPointIds();if(!opportunityRecord||!selected.length)return;
-  busy=true;clearGameplay();ready();$('file').disabled=$('sample').disabled=true;
-  $('status').textContent=`正在调用 ${$('model').value} 推荐预设玩法（计费）。`;
-  try{
-    const {params,body}=videoRequestParams();params.record_id=opportunityRecord.record_id;params.selected=selected.join(',');params.version=$('gameplayPrompt').value;params.model=$('model').value;
-    const response=await fetch('/gameplay?'+new URLSearchParams(params),{method:'POST',headers:{'X-Local-Token':config.token},body});
-    const result=await response.json();record=result;$('raw').textContent=JSON.stringify(result,null,2);$('download').disabled=!result.record_file;
-    if(!response.ok||result.status!=='success')throw Error(result.error||'玩法推荐失败');
-    gameplayRecord=result;
-    renderRecommendations(result.analysis.recommendations||[]);
-    $('metrics').textContent=`第三步 ${result.model} · ${result.video_name} · ${result.prompt_file} · ${result.total_s}s · ${result.record_file}`;
-    $('status').textContent='玩法推荐已保存。请接受、修改或放弃每条结果，再保存玩法描述。';
-  }catch(error){$('status').textContent=error.message}
-  finally{busy=false;$('file').disabled=$('sample').disabled=false;ready()}
-};
-$('saveBrief').onclick=async()=>{
-  if(!opportunityRecord||!gameplayRecord||!selectionDrafts.length)return;
-  if(selectionDrafts.some(item=>item.status==='pending')){$('status').textContent='请先接受、修改或放弃每条推荐。';return}
-  busy=true;ready();
-  $('status').textContent='正在保存玩法描述，此步骤不调用模型。';
-  try{
-    const selections=selectionDrafts.map(item=>({
-      point_id:item.control.pointId,adjusted_time_s:adjustedTime(item.control),status:item.status,game_id:item.game.value,
-      fit:item.ai?item.ai.fit:'',player_goal:item.inputs.goal.value,player_action:item.inputs.action.value,
-      success:item.inputs.success.value,failure:item.inputs.failure.value,feedback:item.inputs.feedback.value}));
-    const response=await fetch('/briefs',{method:'POST',headers:{'Content-Type':'application/json','X-Local-Token':config.token},body:JSON.stringify({opportunity_record_id:opportunityRecord.record_id,gameplay_record_id:gameplayRecord.record_id,selections})});
-    const result=await response.json();record=result;$('raw').textContent=JSON.stringify(result,null,2);$('download').disabled=!result.record_file;
-    if(!response.ok||result.status!=='success')throw Error(result.error||'玩法描述保存失败');
-    $('metrics').textContent=`玩法描述 ${result.video_name} · ${result.record_file}；推荐 ${gameplayRecord.record_file}`;
-    $('status').textContent='玩法描述已保存，未调用模型。下一步只使用接受或修改后的条目。';
-  }catch(error){$('status').textContent=error.message}
-  finally{busy=false;ready()}
-};
-$('reset').onclick=()=>{
-  if(busy)return;
-  if(blobURL){URL.revokeObjectURL(blobURL);blobURL=''}
-  $('file').value='';
-  $('sample').value='';
-  $('video').src='';
-  if($('video').load)$('video').load();
-  applyInitialChoices();
-  clearResults();
-  renderPromptPreview();
-  $('status').textContent='已恢复到初始状态。';
-  ready();
-};
-$('download').onclick=()=>{const u=URL.createObjectURL(new Blob([JSON.stringify(record,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=u;a.download=(record.record_file||'video-analysis').split('/').pop();a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)};
-</script></html>
+<section id="analysisResults"><h2>02 / 候选交互点</h2><p id="summary">尚未调用模型。没有预置分析结果。</p><div id="metrics"></div><div id="points"></div><details><summary>可观察事件与审核（第二步前请检查）</summary><div id="events"></div><ul id="limitations"></ul></details></section>
+<section id="wbTimelinePanel"><h2>项目时间轴</h2><button type="button" id="addManualPoint" class="ghost">在当前播放位置人工新增交互点</button><div id="wbTimeline"></div></section>
+<div id="wbDesign" class="wb-grid"><aside id="wbPointList" class="wb-point-list"></aside><section id="wbEditor"></section></div>
+<section id="wbArrange"><div id="wbArrangement"></div></section>
+<section id="legacyGameplayPanel" style="grid-column:1/-1"><details><summary>原有玩法编辑与完整记录（兼容入口）</summary><h2>04 / 玩法选择</h2><div class="note" id="catalogNote">正在加载小游戏目录…</div><div id="gameplay"></div><button id="saveBrief" disabled>保存玩法描述</button><button id="download" disabled>导出当前完整记录</button><details><summary>查看当前模型原始响应与用量</summary><pre id="raw">暂无</pre></details><p class="note">点击事件或候选点可回看原片。第二步一次接收多个画面，提示词要求不使用后续信息，但不能做到严格隔离；请核实每条理由。第三步只在预设玩法中推荐，接受或修改后的描述才留给下一步。</p></details></section></main>
+<link rel="stylesheet" href="/assets/css/gameplay.css">
+<script src="/assets/js/gameplay/legacy-design.js"></script>
+<script src="/assets/js/gameplay/recommendations.js"></script>
+<script src="/assets/js/workbench.js"></script>
+<link rel="stylesheet" href="/assets/css/validation.css">
+<script src="/assets/js/app.js"></script></html>

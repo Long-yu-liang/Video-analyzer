@@ -1,0 +1,41 @@
+/* Workbench presentation does not alter inference controls or defaults. */
+body{max-width:1440px;margin-top:24px}
+.wb-project-bar{margin-top:20px;padding:18px 22px;background:#fffefb;border:1px solid #d9dfd6;border-radius:12px}
+.wb-project-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.wb-project-tools label{margin:0;flex:1;min-width:200px}.wb-project-tools label input{width:100%}
+.wb-project-tools select{width:auto;max-width:340px}.wb-project-tools button{margin:0}
+.wb-save-state,.wb-error{font-size:14px;margin:10px 0 0}.wb-error{color:#a23428}
+.wb-tabs{display:flex;gap:8px;margin:16px 0}.wb-tabs button{margin:0}
+.wb-tabs button[aria-selected=true]{background:#23362f;color:white;box-shadow:inset 0 -3px #c9b078}
+.wb-grid{display:grid;grid-template-columns:300px minmax(0,1fr);gap:22px;margin-top:20px}
+.wb-point{padding:14px;margin:0 0 12px;border:1px solid #d9dfd6;border-radius:9px;background:#fffefb}
+.wb-point.selected{border:2px solid #547760}.wb-point button{width:100%;text-align:left;margin-top:8px}
+.wb-point img{width:100%;height:115px;object-fit:contain;background:#17251f;border-radius:6px}
+.wb-point small{display:block;letter-spacing:0;color:#657368}.wb-point p{font-size:13px;margin-bottom:0}
+.wb-point-list{max-height:900px;overflow:auto}.wb-description{margin-top:20px;background:#f5f6f0}
+.wb-arrangement-row{border:1px solid #d9dfd6;border-radius:8px;padding:15px;margin:14px 0}
+.wb-arrangement-row label{display:flex;gap:8px;align-items:center}
+.wb-track{position:relative;height:80px;background:linear-gradient(to bottom,transparent 38px,#90a596 38px,#90a596 42px,transparent 42px);margin:8px 35px}
+.wb-marker{position:absolute;transform:translateX(-50%);font-size:11px;padding:5px;margin:8px 0;max-width:74px;white-space:nowrap}
+.wb-marker:nth-child(even){top:40px}.wb-marker[data-state=discarded]{opacity:.4}
+.wb-playhead{display:block;text-align:right;color:#657368;font-size:13px}
+#wbTimelinePanel{grid-column:1/-1;margin-top:20px;padding:16px 24px}
+#wbMediaHint{font-size:13px}.wb-workflow-label{margin-bottom:0}
+body[data-workbench-view=analysis] #wbDesign,body[data-workbench-view=analysis] #wbArrange{display:none}
+body[data-workbench-view=design] #wbArrange,body[data-workbench-view=design] #analysisResults,body[data-workbench-view=design] .prompts{display:none}
+body[data-workbench-view=design] #inputPanel{grid-column:1/-1}
+body[data-workbench-view=arrange] #wbDesign,body[data-workbench-view=arrange] #analysisResults,body[data-workbench-view=arrange] .prompts,body[data-workbench-view=arrange] #legacyGameplayPanel{display:none}
+body[data-workbench-view=arrange] #inputPanel{grid-column:1/-1}
+body[data-workbench-view=analysis] #legacyGameplayPanel{display:none}
+#wbDesign,#wbArrange{grid-column:1/-1}
+@media(max-width:900px){.wb-grid{grid-template-columns:1fr}.wb-point-list{max-height:350px}.wb-tabs{flex-wrap:wrap}.wb-project-tools select{max-width:100%;width:100%}}
+@media(min-width:1001px){
+  body[data-workbench-view=design] main.grid,body[data-workbench-view=arrange] main.grid{grid-template-columns:360px minmax(0,1fr)}
+  body[data-workbench-view=design] #inputPanel,body[data-workbench-view=arrange] #inputPanel{grid-column:1;grid-row:1/4;align-self:start;position:sticky;top:16px}
+  body[data-workbench-view=design] #wbTimelinePanel,body[data-workbench-view=arrange] #wbTimelinePanel{grid-column:2;grid-row:1;margin-top:0}
+  body[data-workbench-view=design] #wbDesign{display:block;grid-column:2;grid-row:2;margin-top:0}
+  body[data-workbench-view=design] #wbPointList{display:flex;gap:10px;overflow:auto;max-height:270px;margin-bottom:16px}
+  body[data-workbench-view=design] .wb-point{min-width:220px;max-width:260px;margin-bottom:0}
+  body[data-workbench-view=design] #legacyGameplayPanel{grid-column:2!important;grid-row:3}
+  body[data-workbench-view=arrange] #wbArrange{grid-column:2;grid-row:2}
+}
