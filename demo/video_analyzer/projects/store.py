@@ -43,10 +43,13 @@ def validate(state):
     if not isinstance(state, dict):
         raise ValueError('项目内容应为对象。')
     state = deepcopy(state)
-    allowed = {'name', 'video', 'session', 'points', 'record_ids', 'seen_record_ids', 'density_s'}
+    allowed = {'name', 'video', 'session', 'points', 'record_ids', 'seen_record_ids', 'density_s', 'deleted_point_ids'}
     if set(state) - allowed:
         raise ValueError('项目含未知字段，不接受原始响应或内嵌媒体。')
     text(state.get('name'), '项目名称', True, 120)
+    deleted=state.get('deleted_point_ids',[])
+    if not isinstance(deleted,list) or len(deleted)>10000 or any(not isinstance(i,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}',i) for i in deleted):
+        raise ValueError('已删除玩点标识无效。')
     video = state.get('video')
     if video is not None:
         if not isinstance(video, dict) or set(video) - {'name', 'sha256', 'sample', 'duration_s'}:
@@ -107,6 +110,7 @@ def validate(state):
         raise ValueError('交互点数量或视频身份无效。')
     ids = set()
     for index, point in enumerate(points):
+        if isinstance(point,dict) and point.get('review')=='pending':point['review']='kept'
         label = f'points[{index}]'
         if not isinstance(point, dict) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', point.get('id', '')) or point['id'] in ids:
             raise ValueError(f'{label} ID 无效或重复。')
@@ -158,8 +162,6 @@ def validate(state):
             if point['stale'] or point['review'] != 'kept':
                 raise ValueError('待核对或未保留的方案不能确认。')
             check_design(point.get('design'), True)
-            for field in BRIEF_FIELDS:
-                text(brief.get(field), field, True)
     for point in points:
         if point.get('merged_into') and (point['merged_into'] not in ids or point['merged_into'] == point['id']
                                          or point['review'] != 'discarded' or point['enabled']):
@@ -235,6 +237,22 @@ class Store:
             except (ValueError, KeyError, OSError):
                 continue
         return sorted(result, key=lambda p: p['updated_at'], reverse=True)
+
+    def delete(self, payload):
+        """Remove from active projects, retaining all revisions in a local trash folder."""
+        with LOCK:
+            project_id = identifier(payload.get('project_id'))
+            previous = self.read(project_id)
+            if type(payload.get('revision')) is not int or payload['revision'] != previous['revision']:
+                raise Conflict('项目已有更新，请重新打开后再删除，未删除任何内容。')
+            source = self.folder(project_id)
+            trash = (self.root / '.trash').resolve()
+            if trash.parent != self.root.resolve():
+                raise ValueError('项目回收目录不安全。')
+            trash.mkdir(exist_ok=True)
+            target = trash / f'{project_id}-{secrets.token_hex(8)}'
+            source.rename(target)
+            return {'deleted': True, 'project_id': project_id, 'recoverable': True}
 
     def save(self, payload):
         state = validate(payload.get('state'))

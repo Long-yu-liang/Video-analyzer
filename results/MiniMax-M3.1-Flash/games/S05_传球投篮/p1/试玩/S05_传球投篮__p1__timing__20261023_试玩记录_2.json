@@ -1,0 +1,17 @@
+{
+  "record_id": "491b1dd27b9822402f175321848a524c",
+  "stage": "game_playtest",
+  "generation_id": "dacc4c9f0230a45f19b6e593d39b3ca9",
+  "model": "MiniMax-M3.1-Flash",
+  "video_name": "S05_传球投篮.mp4",
+  "game_id": "timing",
+  "project_id": "8423da79795a4ad42ea788dcefa3fc63",
+  "point_id": "ai_1503ff95a1883df4372d57b0cba791a3_p1",
+  "created_at": "2026-10-23T03:46:15.312957+00:00",
+  "result": "success",
+  "note": "稳稳接住！双手已合拢。",
+  "manual_review": false,
+  "model_call_made": false,
+  "record_file": "results/MiniMax-M3.1-Flash/games/S05_传球投篮/p1/S05_传球投篮__p1__timing__20261023_试玩记录_2.json",
+  "artifacts": {}
+}

@@ -1,10 +1,14 @@
 """HTTP transport; delegate workflows and mutable configuration to application."""
 import json
 import os
+import re
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, unquote, urlparse
 from .. import application as services
 from .assets import STATIC_ASSETS
+from ..gameplay import generation
+from ..gameplay import library
+from ..projects import game_management as management
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -13,11 +17,28 @@ class Handler(BaseHTTPRequestHandler):
 
     def respond(self, code, data, mime='application/json; charset=utf-8'):
         data = data if isinstance(data, bytes) else json.dumps(data, ensure_ascii=False).encode()
+        content_range = None
+        if code == 200 and mime == 'video/mp4' and self.headers.get('Range'):
+            match = re.fullmatch(r'bytes=(\d*)-(\d*)', self.headers['Range'])
+            total = len(data)
+            if match and any(match.groups()):
+                first, last = match.groups()
+                start = int(first) if first else max(0, total-int(last))
+                end = min(int(last), total-1) if first and last else total-1
+                if 0 <= start <= end < total:
+                    data = data[start:end+1];code = 206
+                    content_range = f'bytes {start}-{end}/{total}'
+                else:
+                    code = 416;data = b'';content_range = f'bytes */{total}'
+            else:
+                code = 416;data = b'';content_range = f'bytes */{total}'
         self.send_response(code)
         self.send_header('Content-Type', mime)
         self.send_header('Content-Length', str(len(data)))
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
+        if mime == 'video/mp4':self.send_header('Accept-Ranges', 'bytes')
+        if content_range:self.send_header('Content-Range', content_range)
         self.end_headers()
         self.wfile.write(data)
 
@@ -25,6 +46,24 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get('Host') not in (f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'):
             return self.respond(403, {'error': '非法 Host'})
         parsed = urlparse(self.path)
+        if parsed.path in ('/game-generation', '/game-selection', '/project-games', '/game-bundle', '/game-trash', '/game-sequence'):
+            if self.headers.get('X-Local-Token') != services.TOKEN:
+                return self.respond(403, {'error': '请从本地首页读取游戏。'})
+            try:
+                q = parse_qs(parsed.query)
+                if parsed.path == '/game-trash':return self.respond(200,management.listing(services.ROOT,q.get('project_id',[''])[0]))
+                if parsed.path == '/game-sequence':return self.respond(200,management.sequence(services.ROOT,q.get('project_id',[''])[0]))
+                if parsed.path == '/project-games':
+                    return self.respond(200, library.inventory(services.ROOT, q.get('project_id', [''])[0]))
+                if parsed.path == '/game-bundle':
+                    return self.respond(200, library.bundle(services.ROOT, q.get('project_id', [''])[0], q.get('generation_id', [None])[0]), 'application/zip')
+                if parsed.path == '/game-selection':
+                    return self.respond(200, generation.selections(services.ROOT, q.get('project_id', [''])[0]))
+                if 'id' in q:
+                    return self.respond(200, generation.read(services.ROOT, q['id'][0]))
+                return self.respond(200, generation.listing(services.ROOT, q.get('project_id', [''])[0], q.get('point_id', [''])[0]))
+            except (ValueError, KeyError, OSError) as error:
+                return self.respond(400, {'error': str(error)})
         asset = STATIC_ASSETS.get(parsed.path)
         if asset:
             relative, mime = asset
@@ -48,8 +87,11 @@ class Handler(BaseHTTPRequestHandler):
                             'metadata', 'model', 'mode', 'fps', 'prompt_file', 'total_s', 'analysis',
                             'catalog_snapshot', 'template_snapshot', 'observations', 'parent_record_id',
                             'request_warnings', 'record_kind', 'model_call_made', 'source_record_id', 'source_record_file',
-                            'validation_status', 'validation_warnings', 'validation_error', 'error')
+                            'validation_status', 'validation_warnings', 'validation_error', 'media_error', 'error', 'usage')
                     result = {k: source[k] for k in keys if k in source}
+                    if isinstance(source.get('segments'), list):
+                        result['segments'] = [{k: item[k] for k in ('record_id', 'status', 'usage', 'clip_start_s', 'clip_end_s')
+                                               if k in item} for item in source['segments'] if isinstance(item, dict)]
                     result['record_file'] = matches[0].relative_to(services.ROOT).as_posix()
                     result['restored_summary'] = True
                     result['observations'] = [{k: v for k, v in item.items() if k != 'preview_jpeg_base64'}
@@ -123,7 +165,29 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get('X-Local-Token') != services.TOKEN:
             return self.respond(403, {'error': '请从本地首页发起请求。'})
         parsed = urlparse(self.path)
-        if parsed.path == '/projects':
+        if parsed.path in ('/game-generation', '/game-repair', '/game-playtest', '/game-selection', '/game-delete', '/game-restore', '/arrangement', '/game-session'):
+            try:
+                n = int(self.headers.get('Content-Length', '0'))
+                if not 0 < n <= (128000 if parsed.path=='/arrangement' else 32000):
+                    raise ValueError('游戏请求为空或过大。')
+                payload = json.loads(self.rfile.read(n).decode('utf-8'))
+                if not isinstance(payload, dict):
+                    raise ValueError('游戏请求必须为对象。')
+                if parsed.path == '/game-repair' and not payload.get('generation_id'):
+                    raise ValueError('修复必须提供原生成记录 ID。')
+                if parsed.path == '/game-generation' and payload.get('generation_id'):
+                    raise ValueError('修复请使用修复入口。')
+                operations={'/game-delete':management.remove,'/game-restore':management.restore,'/arrangement':management.save_arrangement,'/game-session':management.lease}
+                if parsed.path in operations:return self.respond(200,operations[parsed.path](services.ROOT,payload))
+                value = (generation.select(services.ROOT, payload) if parsed.path == '/game-selection' else
+                         generation.playtest(services.ROOT, payload) if parsed.path == '/game-playtest'
+                         else generation.generate(services.ROOT, payload))
+                return self.respond(200, value)
+            except services.projects.Conflict as error:
+                return self.respond(409, {'error': str(error)})
+            except (ValueError, KeyError, OSError) as error:
+                return self.respond(400, {'error': str(error)})
+        if parsed.path in ('/projects', '/project-delete'):
             try:
                 n = int(self.headers.get('Content-Length', '0'))
                 if not 0 < n <= 4_000_000:
@@ -131,13 +195,14 @@ class Handler(BaseHTTPRequestHandler):
                 payload = json.loads(self.rfile.read(n).decode('utf-8'))
                 if not isinstance(payload, dict):
                     raise ValueError('项目请求应为对象。')
-                return self.respond(200, services.projects.Store(services.ROOT / 'projects').save(payload))
+                store = services.projects.Store(services.ROOT / 'projects')
+                return self.respond(200, store.delete(payload) if parsed.path == '/project-delete' else store.save(payload))
             except services.projects.Conflict as error:
                 return self.respond(409, {'error': str(error)})
             except (ValueError, KeyError, TypeError, UnicodeError) as error:
                 return self.respond(400, {'error': str(error)})
             except OSError:
-                return self.respond(500, {'error': '项目保存失败，草稿未确认保存，请重试。'})
+                return self.respond(500, {'error': '项目操作失败，请刷新列表核对后重试。'})
         if parsed.path == '/briefs':
             try:
                 n = int(self.headers.get('Content-Length', '0'))

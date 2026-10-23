@@ -5,6 +5,7 @@ import json
 import os
 import re
 import socket
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -23,6 +24,22 @@ from video_analyzer.web.assets import STATIC_ASSETS
 
 
 class ArchitectureChecks(unittest.TestCase):
+    def test_token_usage_display_without_inference(self):
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Node.js not available')
+        result = subprocess.run([node, str(DEMO/'tests/frontend/token_usage.js')],
+                                capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
+
+    def test_six_view_navigation_without_inference(self):
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Node.js not available')
+        result = subprocess.run([node, str(DEMO/'tests/frontend/workbench_navigation.js')],
+                                capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
+
     def test_model_payloads_match_preorganization_snapshots(self):
         expected=json.loads((Path(__file__).parent/'fixtures/request_payload_hashes.json').read_text(encoding='utf-8'))
         frames=[{'time_s':0.5,'data':'aW1hZ2U='},{'time_s':2.0,'data':'cGljdHVyZQ=='}]
@@ -84,8 +101,9 @@ class ArchitectureChecks(unittest.TestCase):
         page=(DEMO/'web/index.html').read_text(encoding='utf-8')
         scripts=re.findall(r'<script src="([^"]+)"',page)
         self.assertEqual(scripts,[
+            '/assets/js/token-usage.js',
             '/assets/js/gameplay/legacy-design.js','/assets/js/gameplay/recommendations.js',
-            '/assets/js/workbench.js','/assets/js/app.js'])
+            '/assets/js/game-workbench.js','/assets/js/workbench.js','/assets/js/app.js'])
         self.assertNotIn('<script>',page)
         self.assertNotIn('<style>',page)
         for url in re.findall(r'(?:src|href)="(/assets/[^"]+)"',page):

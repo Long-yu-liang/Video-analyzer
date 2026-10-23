@@ -1,0 +1,17 @@
+{
+  "record_id": "4a346f203c0ca7a0405da097087e5aeb",
+  "stage": "game_playtest",
+  "generation_id": "c04c0b793ac0dbedc84fe0c458f16882",
+  "model": "MiniMax-M3.1-Flash",
+  "video_name": "女生准备起跑.mp4",
+  "game_id": "mash",
+  "project_id": "1ef916092d4065786a9c61b033773f7c",
+  "point_id": "ai_cf0bd7c95075630b5e93cbb89c71a2ac_p3",
+  "created_at": "2026-10-23T10:14:53.437724+00:00",
+  "result": "failure",
+  "note": "准备度下降：第2轮需要2–3次点击。",
+  "manual_review": false,
+  "model_call_made": false,
+  "record_file": "results/MiniMax-M3.1-Flash/games/女生准备起跑/p3/试玩/女生准备起跑__p3__mash__20261023_试玩记录_10.json",
+  "artifacts": {}
+}

@@ -9,7 +9,7 @@ const records={opportunities:{record_id:parent,analysis:{interaction_points:[{po
 M.ingest(state,records);M.ingest(state,records);
 assert.equal(state.points.length,1);assert.equal(state.points[0].versions.length,1);
 const p=state.points[0];M.choose(p,p.versions[0]);p.review='kept';
-assert.equal(p.stale,false);assert.throws(()=>M.confirmPoint(p),/补齐/);
+assert.equal(p.stale,false);M.confirmPoint(p);assert.equal(p.confirmed,true,'brief fields are optional');
 p.brief={screen:'控件',rules:'明确判定',transition:'返回视频'};M.confirmPoint(p);assert.equal(p.confirmed,true);
 M.change(p,{time_s:3});assert.equal(p.stale,true);assert.equal(p.confirmed,false);assert.equal(p.versions[0].time_s,2);
 M.choose(p,p.versions[0]);assert.equal(p.stale,true);
@@ -24,3 +24,18 @@ M.merge(state,manual,p);assert.equal(manual.review,'discarded');assert.equal(man
 assert.equal(manual.merged_into,p.id);assert.equal(manual.origin,'manual');
 assert.throws(()=>M.merge(state,p,p));
 console.log('Workbench project model, versions, invalidation, merge and arrangement OK');
+const deletedState=M.blank();deletedState.deleted_point_ids=[`ai_${parent}_p1`];
+M.ingest(deletedState,records);assert.equal(deletedState.points.length,0,'deleted AI point must not reappear');
+assert.equal(M.point('manual_new',1,'参与','依据').review,'kept','new points need no audit dropdown');
+const progressState=M.blank();progressState.points=[{...M.point('m1',2,'行为','依据'),design:core,confirmed:true,enabled:true},
+  {...M.point('m2',4,'其他行为','依据'),review:'discarded',enabled:true}];
+const progress=M.workflowProgress(progressState,{events:{analysis:{events:[{},{}]}},opportunities:{analysis:{}}},
+  {points:[{versions:[{usable:true},{usable:false}]}]});
+assert.equal(progress.analysis,'已识别 2 个事件');assert.equal(progress.opportunities,'1 个交互点');
+assert.equal(progress.design,'1 / 1 个点已选玩法');assert.equal(progress.edit,'1 个方案已确认');
+assert.equal(progress.games,'1 个可用版本');assert.equal(progress.arrange,'1 个点已启用（需检查）');
+assert.equal(M.workflowProgress(M.blank()).analysis,'尚未识别事件');
+const missing=M.missingFields({design:core,brief:{}});assert.equal(missing.length,0);
+assert.equal(M.missingFields({design:{...core,player_action:''},brief:{}})[0][1],'player_action');
+assert.throws(()=>M.confirmPoint({...p,stale:false,design:{...core,player_action:''}}),/核心玩法/);
+assert.equal(M.missingFields({design:core,brief:{screen:'元素',rules:'规则',transition:'衔接'}}).length,0);

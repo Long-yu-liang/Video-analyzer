@@ -1,0 +1,42 @@
+#game { position: relative; display: flex; flex-direction: column; width: 100%; min-height: 280px; height: 100%; box-sizing: border-box; overflow: hidden; color: #ffffff; background: transparent; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
+#game * { box-sizing: border-box; }
+#game .hud { flex: 0 0 auto; padding: 10px 14px 8px; background: rgba(12, 24, 48, 0.72); border-bottom: 1px solid rgba(255,255,255,0.12); }
+#game .title { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
+#game .goal { margin-top: 3px; color: #d9e7ff; font-size: 12px; }
+#game .hint { min-height: 16px; margin-top: 5px; color: #ffd66b; font-size: 12px; }
+#game .scene { position: relative; flex: 1 1 auto; min-height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px 14px 8px; background: linear-gradient(180deg, rgba(30, 65, 120, 0.42), rgba(8, 18, 38, 0.28)); }
+#game .player { position: relative; width: 150px; height: 86px; margin-bottom: 4px; }
+#game .torso { position: absolute; left: 49px; bottom: 0; width: 52px; height: 48px; border-radius: 24px 24px 8px 8px; background: linear-gradient(180deg, #2f75d1, #17468e); border: 2px solid rgba(255,255,255,0.58); }
+#game .torso::before { content: ''; position: absolute; left: 13px; top: -21px; width: 22px; height: 22px; border-radius: 50%; background: #e8b48d; border: 2px solid rgba(255,255,255,0.5); }
+#game .hands { position: absolute; left: 20px; top: 16px; width: 110px; height: 32px; }
+#game .arm { position: absolute; top: 9px; width: 43px; height: 11px; border-radius: 9px; background: #e8b48d; transform-origin: 10px 50%; }
+#game .left-arm { left: 10px; transform: rotate(24deg); }
+#game .right-arm { right: 10px; transform: rotate(-24deg); }
+#game .ball { position: absolute; left: 61px; top: -4px; width: 31px; height: 31px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: #5b2d12; font-size: 11px; font-weight: 800; background: radial-gradient(circle at 34% 28%, #ffd783 0 12%, transparent 13%), #e7832e; border: 2px solid #7b3d18; box-shadow: 0 3px 8px rgba(0,0,0,0.3); }
+#game .gauge-wrap { width: min(92%, 430px); }
+#game .gauge-label { margin-bottom: 5px; text-align: center; color: #e8f0ff; font-size: 12px; font-weight: 600; }
+#game .gauge { position: relative; height: 22px; overflow: hidden; border-radius: 12px; background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.35); }
+#game .target-band { position: absolute; left: 65%; top: 0; width: 20%; height: 100%; background: rgba(70, 220, 125, 0.55); border-left: 1px solid #b9ffd0; border-right: 1px solid #b9ffd0; z-index: 1; }
+#game .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, #4b9cff, #ffd45f 72%, #ff6d55); border-radius: 12px; }
+#game .needle { position: absolute; top: -3px; left: 0; width: 3px; height: 28px; transform: translateX(-50%); background: #ffffff; box-shadow: 0 0 5px rgba(0,0,0,0.6); z-index: 2; }
+#game .gauge-value { margin-top: 4px; text-align: center; color: #ffffff; font-size: 13px; font-weight: 700; }
+#game .scale { margin-top: 2px; color: #b9c9e2; font-size: 10px; text-align: center; white-space: nowrap; }
+#game .controls { flex: 0 0 auto; padding: 9px 14px 13px; background: rgba(12, 24, 48, 0.72); border-top: 1px solid rgba(255,255,255,0.12); }
+#game .charge-pad { width: 100%; min-height: 46px; border: 1px solid rgba(255,255,255,0.5); border-radius: 10px; color: #ffffff; background: linear-gradient(180deg, #337bd4, #1c4d9a); font-size: 16px; font-weight: 700; letter-spacing: 1px; cursor: pointer; touch-action: none; }
+#game .charge-pad.pressed { background: linear-gradient(180deg, #e1a42e, #b96b17); transform: translateY(1px); }
+#game .charge-pad:disabled { opacity: 0.72; cursor: default; }
+#game .result { position: absolute; left: 50%; top: 48%; width: min(88%, 340px); padding: 14px 16px; display: none; transform: translate(-50%, -50%); text-align: center; border: 1px solid rgba(255,255,255,0.48); border-radius: 12px; background: rgba(11, 24, 48, 0.94); box-shadow: 0 8px 24px rgba(0,0,0,0.35); pointer-events: none; z-index: 5; }
+#game .result.show { display: block; }
+#game .result-title { color: #ffd66b; font-size: 18px; font-weight: 800; }
+#game .result-text { margin-top: 6px; color: #ffffff; font-size: 13px; line-height: 1.45; }
+#game.success .result { border-color: rgba(90, 235, 145, 0.9); }
+#game.success .result-title { color: #71ef9b; }
+#game.failure .result { border-color: rgba(255, 120, 105, 0.9); }
+#game.failure .result-title { color: #ff8b78; }
+#game .player.launch .ball { animation: game-ball-launch 700ms ease-out forwards; }
+#game .player.weak .ball { animation: game-ball-weak 550ms ease-in forwards; }
+#game .player.over .ball { animation: game-ball-over 600ms ease-in-out forwards; }
+@keyframes game-ball-launch { 0% { transform: translate(0,0) scale(1); } 65% { transform: translate(2px,-45px) scale(1.08); } 100% { transform: translate(8px,-58px) scale(0.9); opacity: 0.75; } }
+@keyframes game-ball-weak { 0% { transform: translate(0,0); } 100% { transform: translate(0,18px) scale(0.8); opacity: 0.65; } }
+@keyframes game-ball-over { 0% { transform: translate(0,0) rotate(0); } 45% { transform: translate(-7px,-18px) rotate(-18deg); } 100% { transform: translate(8px,10px) rotate(25deg); opacity: 0.6; } }
+@media (max-height: 360px) { #game .player { transform: scale(0.78); margin-bottom: -8px; } #game .scene { padding-top: 3px; padding-bottom: 3px; } #game .gauge-wrap { transform: scale(0.9); transform-origin: center; } }

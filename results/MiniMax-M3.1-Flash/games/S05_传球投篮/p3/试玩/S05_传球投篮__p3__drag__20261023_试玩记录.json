@@ -1,0 +1,17 @@
+{
+  "record_id": "39e619f160a755d486dfc7193e256913",
+  "stage": "game_playtest",
+  "generation_id": "882332f7adbcec32b164296804ebf93d",
+  "model": "MiniMax-M3.1-Flash",
+  "video_name": "S05_传球投篮.mp4",
+  "game_id": "drag",
+  "project_id": "d9bf4590eebef62bd5c22649675cda20",
+  "point_id": "ai_8a8e479c62e1298baa317d7a34b9bbcb_p3",
+  "created_at": "2026-10-23T08:12:24.147707+00:00",
+  "result": "success",
+  "note": "稳住！篮球已进入右肩前方的标准持球区域。",
+  "manual_review": false,
+  "model_call_made": false,
+  "record_file": "results/MiniMax-M3.1-Flash/games/S05_传球投篮/p3/试玩/S05_传球投篮__p3__drag__20261023_试玩记录.json",
+  "artifacts": {}
+}

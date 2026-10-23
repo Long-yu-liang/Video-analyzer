@@ -1,0 +1,17 @@
+{
+  "record_id": "4a8af6856814088627f5f3fc1814492d",
+  "stage": "game_playtest",
+  "generation_id": "c04c0b793ac0dbedc84fe0c458f16882",
+  "model": "MiniMax-M3.1-Flash",
+  "video_name": "女生准备起跑.mp4",
+  "game_id": "mash",
+  "project_id": "1ef916092d4065786a9c61b033773f7c",
+  "point_id": "ai_cf0bd7c95075630b5e93cbb89c71a2ac_p3",
+  "created_at": "2026-10-23T10:15:13.290359+00:00",
+  "result": "success",
+  "note": "节奏稳定，启动准备已就绪！",
+  "manual_review": false,
+  "model_call_made": false,
+  "record_file": "results/MiniMax-M3.1-Flash/games/女生准备起跑/p3/试玩/女生准备起跑__p3__mash__20261023_试玩记录_12.json",
+  "artifacts": {}
+}

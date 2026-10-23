@@ -3,6 +3,13 @@ const $=id=>document.getElementById(id);let config,record,eventRecord,opportunit
 const selectedEventIds=()=>reviewChecks.filter(item=>item.checked).map(item=>item.value);
 const selectedPointIds=()=>pointControls.filter(item=>item.include.checked).map(item=>item.pointId);
 function clearGameplay(){gameplayRecord=null;selectionDrafts=[];designDrafts=[];recommendationDrafts=[];$('gameplay').replaceChildren();}
+function renderTokenUsage(){
+  const host=$('tokenUsage');if(!host||typeof TokenUsage==='undefined')return;
+  host.replaceChildren();
+  const records={events:eventRecord,opportunities:opportunityRecord,gameplay:gameplayRecord};
+  if(record&&Object.hasOwn(records,record.stage))records[record.stage]=record;
+  for(const [stage,label] of [['events','事件识别'],['opportunities','交互机会'],['gameplay','玩法推荐']])TokenUsage.render(host,records[stage],label);
+}
 function adjustedTime(control){
   const duration=Number(opportunityRecord?.metadata?.duration_s);
   let value=Number(control.time.value);
@@ -75,6 +82,7 @@ function ready(){
   const key=config.configured.beeroute?'已配置':'待配置 BEEROUTE_API_KEY';
   const names=Object.keys(config.models||{});
   $('configState').textContent=names.length?`密钥${key}。事件 ${$('eventPrompt').value||'未选'}，机会 ${$('opportunityPrompt').value||'未选'}，玩法 ${$('gameplayPrompt').value||'未选'}。当前模型 ${$('model').value||'未选'}，结果写入 results/${$('model').value||'模型名'}/。`:'请在 .env 设置 BEEROUTE_MODELS 后重启。';
+  renderTokenUsage();
   if(typeof Workbench!=='undefined')Workbench.notify();
 }
 fetch('/config').then(r=>r.json()).then(c=>{
@@ -213,19 +221,20 @@ $('recognize').onclick=async()=>{
   eventRecord=null;opportunityRecord=null;reviewChecks=[];pointControls=[];clearGameplay();$('download').disabled=true;
   $('events').replaceChildren();$('points').replaceChildren();$('limitations').replaceChildren();$('summary').textContent='第一步：识别事件中…';
   $('status').textContent=`正在调用 ${$('model').value} 识别画面事件（计费）。`;
+  let mediaFailure=false;
   try{
     const {params,body}=videoRequestParams();
     params.version=$('eventPrompt').value;params.model=$('model').value;params.mode=$('mode').value;params.fps=$('fps').value;
     const response=await fetch('/events?'+new URLSearchParams(params),{method:'POST',headers:{'X-Local-Token':config.token},body});
-    const result=await response.json();record=result;$('raw').textContent=JSON.stringify(result,null,2);$('download').disabled=!result.record_file;
+    const result=await response.json();mediaFailure=!!result.media_error;record=result;$('raw').textContent=JSON.stringify(result,null,2);$('download').disabled=!result.record_file;
     if(!response.ok||result.status!=='success')throw Error(result.error||'事件识别失败');
     eventRecord=result;$('summary').textContent=result.analysis.summary;
-    const segmentInfo=result.segments?` · 成功片段 ${result.segments.filter(item=>item.status==='success').length} / 请求 ${result.segments.length}`:'';
+    const segmentInfo=result.segments?` · 成功片段 ${result.segments.filter(item=>item.status==='success').length} / 处理 ${result.segments.length} 次`:'';
     $('metrics').textContent=`第一步 ${result.model} · ${result.mode} · ${result.fps} fps · ${result.video_name} · ${result.prompt_file}${segmentInfo} · ${result.total_s}s · ${result.record_file}`;
     renderReviewedEvents(result.analysis.events);
     for(const item of result.analysis.limitations){const li=document.createElement('li');li.textContent=item;$('limitations').append(li)}
     $('status').textContent=`事件已保存${segmentInfo}。请回看并审核，再点击第二步。`;
-  }catch(error){$('summary').textContent='第一步未获得通过校验的事件。';$('status').textContent=error.message}
+  }catch(error){$('summary').textContent=mediaFailure?'视频预处理失败，分析未完成。':'第一步未获得通过校验的事件。';$('status').textContent=error.message}
   finally{busy=false;$('file').disabled=$('sample').disabled=false;ready()}
 };
 $('suggest').onclick=async()=>{

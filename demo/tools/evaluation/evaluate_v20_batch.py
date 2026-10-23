@@ -100,7 +100,7 @@ def run(folder):
             entry.update(status=result['status'], record_id=result['record_id'],
                          record_file=result['record_file'], error=result.get('error'), count=count,
                          total_s=result.get('total_s'), usage=result.get('usage'),
-                         request_count=len(result['segments']) if result.get('segments') else len(result.get('api_attempts') or []))
+                         request_count=app.model_request_count(result))
             dump(ledger_path, ledger)
             print(json.dumps({'group': group, 'stage': stage, **entry}, ensure_ascii=False), flush=True)
         return result if result['status'] == 'success' else None

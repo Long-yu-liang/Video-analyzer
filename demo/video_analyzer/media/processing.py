@@ -7,13 +7,44 @@ import re
 import subprocess
 
 
+class MediaProcessingError(ValueError):
+    """A local media failure, not a model error or proof that the source is corrupt."""
+    def __init__(self, operation, *, tool='ffmpeg', exit_code=None, stderr='', code='process_failed', message=None):
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode('utf-8', errors='replace')
+        stderr = (stderr or '')[-6000:]
+        label = {'probe': '视频信息读取', 'transcode': '视频分段/重新编码',
+                 'remux': '视频去音轨/封装', 'extract': '视频抽帧', 'verify': '预处理产物校验'}[operation]
+        if message is None:
+            status = f'退出码 {exit_code}' if exit_code is not None else code
+            message = f'{label}失败（{tool}，{status}）；这不等于原视频无法播放。'
+            message += (' 错误详情：'+stderr[-500:].strip()) if stderr.strip() else ' 进程未提供错误文本，请检查本机 FFmpeg 环境。'
+        self.detail = {'stage': 'media_preprocessing', 'operation': operation, 'tool': tool,
+                       'code': code, 'exit_code': exit_code, 'stderr': stderr, 'message': message}
+        super().__init__(message)
+
+
+def _operation(args):
+    if Path(str(args[0])).stem.lower() == 'ffprobe':
+        return 'probe'
+    if '-c:v' in args and args[args.index('-c:v')+1] == 'copy':
+        return 'remux'
+    return 'transcode'
+
+
 def run(args):
+    operation = _operation(args)
+    tool = Path(str(args[0])).name
     try:
         return subprocess.run(args, check=True, capture_output=True, timeout=90).stdout
-    except FileNotFoundError:
-        raise ValueError('请安装 FFmpeg，并将 ffmpeg / ffprobe 加入 PATH。')
-    except subprocess.CalledProcessError:
-        raise ValueError('视频无法解码；请使用可播放的 MP4 文件。')
+    except FileNotFoundError as error:
+        raise MediaProcessingError(operation, tool=tool, code='missing_tool',
+            message='请安装 FFmpeg，并将 ffmpeg / ffprobe 加入 PATH。') from error
+    except subprocess.CalledProcessError as error:
+        raise MediaProcessingError(operation, tool=tool, exit_code=error.returncode, stderr=error.stderr) from error
+    except subprocess.TimeoutExpired as error:
+        raise MediaProcessingError(operation, tool=tool, code='timeout', stderr=error.stderr,
+            message=f'{tool} {operation} 处理超过 90 秒，尚未调用本次模型请求。') from error
 
 
 def probe(path, runner=None):
@@ -25,8 +56,23 @@ def probe(path, runner=None):
     duration = float(info['format']['duration'])
     if not math.isfinite(duration) or not 0 < duration <= 60:
         raise ValueError('本 Demo 仅接受 0–60 秒视频；请先裁剪。')
-    return {'duration_s': duration, 'width': video['width'], 'height': video['height'],
-            'has_audio': any(x['codec_type'] == 'audio' for x in info['streams'])}
+    result = {'duration_s': duration, 'width': video['width'], 'height': video['height'],
+              'has_audio': any(x['codec_type'] == 'audio' for x in info['streams']),
+              'video_codec': video.get('codec_name', 'unknown')}
+    for key, source in (('video_duration_s', 'duration'), ('video_start_s', 'start_time')):
+        try:
+            value = float(video.get(source, ''))
+            if math.isfinite(value):
+                result[key] = value
+        except (TypeError, ValueError):
+            pass
+    try:
+        count = int(video.get('nb_frames', ''))
+        if count > 0:
+            result['video_frame_count'] = count
+    except (TypeError, ValueError):
+        pass
+    return result
 
 
 def extract(path, directory, duration, fps):
@@ -36,8 +82,13 @@ def extract(path, directory, duration, fps):
                '-fps_mode', 'vfr', '-frames:v', '120', '-q:v', '4', str(directory / '%03d.jpg')]
     try:
         proc = subprocess.run(command, check=True, capture_output=True, timeout=90)
-    except subprocess.CalledProcessError:
-        raise ValueError('抽帧失败。')
+    except FileNotFoundError as error:
+        raise MediaProcessingError('extract', code='missing_tool', message='请安装 FFmpeg，并将 ffmpeg 加入 PATH。') from error
+    except subprocess.CalledProcessError as error:
+        raise MediaProcessingError('extract', exit_code=error.returncode, stderr=error.stderr) from error
+    except subprocess.TimeoutExpired as error:
+        raise MediaProcessingError('extract', code='timeout', stderr=error.stderr,
+            message='视频抽帧超过 90 秒，尚未调用本次模型请求。') from error
     pts = [float(x) for x in re.findall(r'pts_time:([\d.eE+-]+)', proc.stderr.decode(errors='replace'))]
     images = sorted(directory.glob('*.jpg'))
     if not images or len(pts) < len(images):
@@ -49,13 +100,37 @@ def extract(path, directory, duration, fps):
 
 def strip_audio(path, output):
     """Remux a visual-only request copy without changing the source file."""
-    try:
-        subprocess.run(['ffmpeg', '-v', 'error', '-i', str(path), '-map', '0:v:0',
-                        '-c:v', 'copy', '-an', '-sn', '-dn', '-movflags', '+faststart',
-                        str(output)], check=True, capture_output=True, timeout=90)
-    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        raise ValueError('无法移除视频音轨；未调用模型。请检查 FFmpeg 或视频文件。')
+    # Never add -ss/-t here: output-side stream-copy seeking can drop the opening GOP.
+    run(['ffmpeg', '-v', 'error', '-i', str(path), '-map', '0:v:0',
+         '-c:v', 'copy', '-an', '-sn', '-dn', '-movflags', '+faststart', str(output)])
     return output
+
+
+def prepare_full_video(path, output, metadata, mode, *, remux=None, prober=None, max_video=12 * 1024 * 1024):
+    """Use the entire original picture stream; no cropping or codec/preset fallback."""
+    if mode not in ('direct', 'frames'):
+        raise ValueError('未知视频输入方式。')
+    if mode == 'frames':
+        return path, dict(metadata), 'original_frames'
+    if metadata.get('video_codec') != 'h264':
+        raise ValueError('原码流直传仅用于已确认的 H.264 视频。')
+    if not metadata['has_audio']:
+        return path, dict(metadata), 'original_video'
+    request_path = (remux or strip_audio)(path, output)
+    if not request_path.is_file() or not 0 < request_path.stat().st_size <= max_video:
+        raise MediaProcessingError('verify', code='invalid_output', message='去音轨产物为空或超过 12 MiB，未调用模型。')
+    actual = (prober or probe)(request_path)
+    valid = not actual['has_audio'] and actual.get('video_codec') == metadata['video_codec']
+    valid = valid and all(actual[k] == metadata[k] for k in ('width', 'height'))
+    for field in ('video_start_s', 'video_duration_s'):
+        if field in metadata:
+            valid = valid and field in actual and abs(actual[field] - metadata[field]) <= 0.001
+    if 'video_frame_count' in metadata:
+        valid = valid and actual.get('video_frame_count') == metadata['video_frame_count']
+    if not valid:
+        raise MediaProcessingError('verify', code='timeline_changed',
+            message='去音轨产物的画面流、帧数或时间信息不一致，未调用模型；不会使用可能丢失片头的产物。')
+    return request_path, actual, 'stream_copy_without_audio'
 
 
 def list_samples(root):

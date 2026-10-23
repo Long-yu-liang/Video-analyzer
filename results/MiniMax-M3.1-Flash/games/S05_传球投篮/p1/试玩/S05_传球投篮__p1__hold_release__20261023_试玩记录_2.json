@@ -1,0 +1,17 @@
+{
+  "record_id": "0b458d9353fcba7e640fe375a6f463a6",
+  "stage": "game_playtest",
+  "generation_id": "451866601f211848430cc04574c9cca2",
+  "model": "MiniMax-M3.1-Flash",
+  "video_name": "S05_传球投篮.mp4",
+  "game_id": "hold_release",
+  "project_id": "d9bf4590eebef62bd5c22649675cda20",
+  "point_id": "ai_8a8e479c62e1298baa317d7a34b9bbcb_p1",
+  "created_at": "2026-10-23T08:23:31.338286+00:00",
+  "result": "success",
+  "note": "力度适中：托球稳定，已完成合适蓄力。",
+  "manual_review": false,
+  "model_call_made": false,
+  "record_file": "results/MiniMax-M3.1-Flash/games/S05_传球投篮/p1/试玩/S05_传球投篮__p1__hold_release__20261023_试玩记录_2.json",
+  "artifacts": {}
+}

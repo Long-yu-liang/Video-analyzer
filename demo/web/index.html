@@ -1,19 +1,31 @@
-<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>视频分析 · DAY 03</title>
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>视频交互工作台</title>
 <link rel="stylesheet" href="/assets/css/base.css">
 <link rel="stylesheet" href="/assets/css/workbench.css">
-<header><small>VIDEO ANALYZER / DAY 03</small><h1>视频交互编排工作台</h1><p>分析画面、选择玩法、编排自己的交互方案。仅完善功能，不改变现有模型分析与推荐策略。</p></header>
+<header><small>VIDEO ANALYZER</small><h1>视频交互工作台</h1><p>找到参与位置，选择玩法，再生成游戏并串联试玩。</p></header>
 <div class="wb-project-bar">
   <div class="wb-project-tools"><label>项目名称<input id="projectName" maxlength="120" aria-label="项目名称"></label>
-    <button id="saveProject" type="button">保存项目</button><button id="saveProjectCopy" type="button" class="ghost">另存副本</button><button id="newProject" type="button" class="ghost">新建项目</button>
-    <select id="projectList" aria-label="已保存项目"></select><button id="openProject" type="button" class="ghost">打开项目</button>
-    <button id="backupProject" type="button" class="ghost">草稿备份</button></div>
+    <button id="saveProject" type="button">保存项目</button><details class="wb-project-menu"><summary>项目管理</summary><button id="saveProjectCopy" type="button" class="ghost">另存副本</button><button id="newProject" type="button" class="ghost">新建项目</button>
+    <select id="projectList" aria-label="已保存项目"></select><button id="openProject" type="button" class="ghost">打开项目</button><button id="deleteProject" type="button" class="ghost" disabled>删除当前项目</button>
+    <button id="backupProject" type="button" class="ghost">草稿备份</button></details></div>
   <details><summary>导入已有分析结果 / 恢复草稿备份（不调用模型）</summary><label>选择原始分析 JSON 或本工作台的草稿备份<input id="importRecord" type="file" accept="application/json,.json"></label></details>
   <p id="projectStatus" role="status" aria-live="polite"></p><p id="wbMediaHint"></p>
-  <nav class="wb-tabs" aria-label="工作台视图"><button type="button" class="ghost" data-wb-tab="analysis">1. 分析与选点</button>
-    <button type="button" class="ghost" data-wb-tab="design">2. 玩法比较与编辑</button><button type="button" class="ghost" data-wb-tab="arrange">3. 编排与描述预览</button></nav>
+  <p class="wb-video-required">必须要有视频，否则无法正常运行</p>
 </div>
+<div class="wb-shell">
+<nav class="wb-tabs" aria-label="工作台视图">
+  <button type="button" class="ghost" data-wb-tab="analysis">1. 视频分析</button>
+  <button type="button" class="ghost" data-wb-tab="opportunities">2. 寻找交互机会</button>
+  <button type="button" class="ghost" data-wb-tab="design">3. 玩法推荐与选择</button>
+  <button type="button" class="ghost" data-wb-tab="edit">4. 玩法方案编辑</button>
+  <button type="button" class="ghost" data-wb-tab="games">5. 游戏生成与管理</button>
+  <button type="button" class="ghost" data-wb-tab="arrange">6. 视频交互编排</button>
+</nav>
+<div class="wb-content">
+<div class="wb-view-heading"><h2 id="wbViewTitle">视频分析</h2><p id="wbViewHint">识别可观察事件，回看画面并排除失实描述。</p></div>
+<p id="wbNextHint" class="wb-next-hint" role="status" aria-live="polite"></p>
 <div class="note" id="configState">正在检查配置…</div>
-<section class="prompts"><h2>提示词</h2>
+<details id="tokenUsagePanel" open><summary>Token 用量 · 最近阶段记录</summary><p>调用完成后显示接口返回值；未返回不等于 0。这里只显示最近记录，不是项目累计账单，也不估算费用。</p><div id="tokenUsage"></div></details>
+<details class="prompts"><summary>模型提示词与分析设置</summary>
 <div class="prompt-grid">
 <div><label for="eventPrompt">事件识别</label><select id="eventPrompt"></select></div>
 <div><label for="opportunityPrompt">机会发现</label><select id="opportunityPrompt"></select></div>
@@ -21,24 +33,32 @@
 </div>
 <p class="note" id="flowHint">第一步使用所选模型、输入方式和采样率。事件识别选 v14 时，超过 25 秒会分段。</p>
 <details id="promptDetails"><summary>查看所选提示词全文</summary><div id="promptPreview"></div></details>
-</section>
-<main class="grid"><section id="inputPanel"><h2>01 / 输入与视频回看</h2>
+</details>
+<main class="grid"><section id="inputPanel"><h2>视频回看</h2><div class="wb-media-source">
 <label for="sample">mp4-example</label><select id="sample"></select>
 <label for="file">或上传其他 MP4 · 最长 60 秒 / 12 MiB</label><input id="file" type="file" accept="video/mp4">
-<video id="video" controls></video>
-<label for="model">模型</label><select id="model"></select>
+</div><details class="wb-player-preview" open><summary>定位画面 / 收起视频</summary><div id="videoStage"><video id="video" controls></video><div id="gameOverlay" hidden></div></div></details>
+<div id="modelControls"><label for="model">模型</label><select id="model"></select></div>
+<div id="analysisControls">
 <label for="mode">第一步输入方式</label><select id="mode"><option value="frames">顺序采样画面 + 真实时间戳（不含声音）</option><option value="direct" selected>直接视频（声音能力取决于模型）</option></select>
 <label for="fps">第一步采样率</label><select id="fps"><option>0.5</option><option>1</option><option selected>2</option></select>
-<button id="recognize" disabled>第一步：识别可观察事件</button><button id="suggest" disabled>第二步：寻找交互机会</button><button id="recommend" disabled>第三步：推荐小游戏</button><button id="reset" class="ghost" type="button">刷新重置</button><p class="note" id="reviewHint">先识别事件。采样率和输入方式只用于第一步。可以取消勾选失实事件，再运行第二步。</p>
+<button id="recognize" disabled>识别可观察事件</button><button id="reset" class="ghost" type="button">刷新重置</button></div>
 <div class="status" id="status" role="status" aria-live="polite"></div></section>
-<section id="analysisResults"><h2>02 / 候选交互点</h2><p id="summary">尚未调用模型。没有预置分析结果。</p><div id="metrics"></div><div id="points"></div><details><summary>可观察事件与审核（第二步前请检查）</summary><div id="events"></div><ul id="limitations"></ul></details></section>
+<section id="eventResults"><h2>可观察事件</h2><p id="summary">尚未调用模型。没有预置分析结果。</p><p class="note" id="reviewHint">先识别事件。采样率和输入方式只用于第一步。可以取消勾选失实事件，再运行第二步。</p><div id="events"></div><ul id="limitations"></ul><button type="button" data-wb-go="opportunities">下一步：寻找交互机会 →</button></section>
+<section id="analysisResults"><h2>寻找交互机会</h2><p>根据第一步勾选的事件及对应画面寻找参与位置；未识别事件或未选中事件时不能调用。</p><button id="suggest" disabled>寻找交互机会</button><button type="button" class="ghost" data-wb-go="analysis">返回检查事件</button><h3>候选交互点</h3><div id="points"></div><button type="button" data-wb-go="design">下一步：选择玩法 →</button></section>
 <section id="wbTimelinePanel"><h2>项目时间轴</h2><button type="button" id="addManualPoint" class="ghost">在当前播放位置人工新增交互点</button><div id="wbTimeline"></div></section>
+<section id="wbRecommendationActions"><h2>为交互点推荐玩法</h2><p>使用当前选择的模型和玩法提示词，为勾选的候选点推荐方案；调用前可回到分析页检查设置。</p><button id="recommend" disabled>推荐小游戏</button></section>
 <div id="wbDesign" class="wb-grid"><aside id="wbPointList" class="wb-point-list"></aside><section id="wbEditor"></section></div>
 <section id="wbArrange"><div id="wbArrangement"></div></section>
-<section id="legacyGameplayPanel" style="grid-column:1/-1"><details><summary>原有玩法编辑与完整记录（兼容入口）</summary><h2>04 / 玩法选择</h2><div class="note" id="catalogNote">正在加载小游戏目录…</div><div id="gameplay"></div><button id="saveBrief" disabled>保存玩法描述</button><button id="download" disabled>导出当前完整记录</button><details><summary>查看当前模型原始响应与用量</summary><pre id="raw">暂无</pre></details><p class="note">点击事件或候选点可回看原片。第二步一次接收多个画面，提示词要求不使用后续信息，但不能做到严格隔离；请核实每条理由。第三步只在预设玩法中推荐，接受或修改后的描述才留给下一步。</p></details></section></main>
+<section id="legacyGameplayPanel"><details><summary>历史方案编辑器</summary><div class="note" id="catalogNote">正在加载小游戏目录…</div><div id="gameplay"></div><button id="saveBrief" disabled>保存玩法描述</button></details></section>
+<section id="wbRecordsPanel"><details><summary>查看分析记录与原始响应</summary><div id="metrics"></div><button id="download" disabled>导出当前完整记录</button><pre id="raw">暂无</pre><p class="note">模型原始记录保持不变。第二步可能看到多个时间点，请回看核实理由是否借用了未来信息。</p></details></section></main>
+</div></div>
 <link rel="stylesheet" href="/assets/css/gameplay.css">
+<script src="/assets/js/token-usage.js"></script>
 <script src="/assets/js/gameplay/legacy-design.js"></script>
 <script src="/assets/js/gameplay/recommendations.js"></script>
+<link rel="stylesheet" href="/assets/css/game-workbench.css">
+<script src="/assets/js/game-workbench.js"></script>
 <script src="/assets/js/workbench.js"></script>
 <link rel="stylesheet" href="/assets/css/validation.css">
 <script src="/assets/js/app.js"></script></html>

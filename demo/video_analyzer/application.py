@@ -21,6 +21,7 @@ from .projects import store as projects
 from .contracts.output import ContractError, MISSING, expected, parse_json, require_text
 from .contracts import legacy as legacy_contracts, stages as stage_contracts
 from .media import processing as media_processing
+from .media.processing import MediaProcessingError
 from .models import requests as model_requests, client as model_client
 from .models.client import TruncatedOutputError
 from .catalog import prompts as prompt_catalog
@@ -79,6 +80,11 @@ def extract(path, directory, duration, fps):
 
 def strip_audio(path, output):
     return media_processing.strip_audio(path, output)
+
+
+def prepare_full_video(path, output, metadata, mode):
+    return media_processing.prepare_full_video(path, output, metadata, mode,
+        remux=strip_audio, prober=probe, max_video=MAX_VIDEO)
 
 
 def extract_json(text):
@@ -192,28 +198,48 @@ def clip_video(path, output, start_s, end_s):
     return media_processing.clip_video(path, output, start_s, end_s, runner=run, max_video=MAX_VIDEO)
 
 
+def model_request_count(record):
+    """A failed local preprocessing segment is not a model request."""
+    parts = record.get('segments') if isinstance(record.get('segments'), list) else [record]
+    return sum(len(item['api_attempts']) if isinstance(item.get('api_attempts'), list)
+               else int(bool(item.get('raw_response'))) for item in parts)
+
+
 def analyze_segment(path, folder, core_start, core_end, clip_start, clip_end,
                     prompt, key, parent, depth=0):
-    clip = folder / f'segment-{len(parent["segments"])+1}.mp4'
-    clip_video(path, clip, clip_start, clip_end)
-    metadata = probe(clip)
-    data = base64.b64encode(clip.read_bytes()).decode()
     model = parent.get('model') or 'qwen3-vl-plus'
     mode = parent.get('mode') or 'direct'
     fps = parent.get('fps') or 2.
+    output = folder / f'segment-{len(parent["segments"])+1}.mp4'
     segment = {'core_start_s': core_start, 'core_end_s': core_end,
                'clip_start_s': clip_start, 'clip_end_s': clip_end,
-               'clip_sha256': hashlib.sha256(clip.read_bytes()).hexdigest(),
-               'sent_video_bytes': clip.stat().st_size, 'sent_audio': False,
-               'metadata': metadata, 'fps': fps, 'status': 'failed'}
+               'sent_audio': False, 'fps': fps, 'status': 'failed',
+               'preprocessing_status': 'processing'}
     parent['segments'].append(segment)
     try:
+        source_metadata = parent['metadata']
+        full_source = (source_metadata['duration_s'] <= 25. and clip_start == 0.
+                       and abs(clip_end - source_metadata['duration_s']) <= 1e-6
+                       and (mode == 'frames' or source_metadata.get('video_codec') == 'h264'))
+        if full_source:
+            segment['preprocessing_method'] = ('original_frames' if mode == 'frames' else
+                'stream_copy_without_audio' if source_metadata['has_audio'] else 'original_video')
+            clip, metadata, method = prepare_full_video(path, output, source_metadata, mode)
+        else:
+            segment['preprocessing_method'] = 'segment_transcode'
+            clip_video(path, output, clip_start, clip_end)
+            clip, metadata, method = output, probe(output), 'segment_transcode'
+        if not clip.is_file() or not 0 < clip.stat().st_size <= MAX_VIDEO:
+            raise MediaProcessingError('verify', code='invalid_output', message='预处理视频为空或超过 12 MiB，未调用模型。')
+        segment.update(preprocessing_method=method, preprocessing_status='success', metadata=metadata,
+                       clip_sha256=hashlib.sha256(clip.read_bytes()).hexdigest(), sent_video_bytes=clip.stat().st_size)
         if mode == 'frames':
             frame_dir = folder / f'frames-{len(parent["segments"])}'
             frame_dir.mkdir()
             frames = extract(clip, frame_dir, metadata['duration_s'], fps)
             url, body, _ = build_request(model, 'frames', fps, '', frames, metadata, prompt)
         else:
+            data = base64.b64encode(clip.read_bytes()).decode()
             url, body, _ = build_request(model, 'direct', fps, data, [], metadata, prompt)
         segment['actual_prompt'] = body['messages'][0]['content'][0]['text']
         output = call_v13_model(url, body, key, segment)
@@ -231,6 +257,8 @@ def analyze_segment(path, folder, core_start, core_end, clip_start, clip_end,
                                   prompt, key, parent, depth + 1))
     except (ValueError, KeyError, IndexError, TypeError, HTTPError, URLError) as error:
         segment['error'] = str(error)
+        if isinstance(error, MediaProcessingError):
+            segment.update(media_error=error.detail, preprocessing_status='failed')
         raise
     # Only one segment owns each original-video time, despite overlapping input clips.
     events = []
@@ -279,7 +307,8 @@ def analyze_events_segmented(path, folder, metadata, prompt, key, record):
     successful = [item for item in record['segments'] if item['status'] == 'success']
     summaries = [f"约{item['core_start_s']:g}–{item['core_end_s']:g}秒：{item['analysis']['summary']}"
                  for item in successful]
-    limitations = ['长视频分段识别；相邻片段重叠约 1 秒，事件按代表画面归入唯一时间段。']
+    limitations = (['长视频分段识别；相邻片段重叠约 1 秒，事件按代表画面归入唯一时间段。']
+                   if metadata['duration_s'] > 25. else ['短视频按完整画面时间轴识别；图片或视频输入均不分析音轨。'])
     for item in successful:
         limitations.extend(f"{item['clip_start_s']:g}秒片段：{value}" for value in item['analysis']['limitations'])
     record['analysis'] = validate_stage_events(json.dumps({'summary': '；'.join(summaries),
@@ -343,6 +372,8 @@ def analyze_events(raw, video_name, version='v13', model='qwen3-vl-plus', mode='
                 output = call_v13_model(url, body, key, record)
                 record['analysis'] = validate_stage_events(output, metadata['duration_s'])
             record.update(status='success', cost=None, cost_note='未设置单价；按返回的 usage 核算。')
+    except MediaProcessingError as error:
+        record.update(error=str(error), media_error=error.detail)
     except ContractError as error:
         record.update(error=str(error), validation_error=error.detail, validation_status='failed')
     except HTTPError as error:
@@ -353,6 +384,7 @@ def analyze_events(raw, video_name, version='v13', model='qwen3-vl-plus', mode='
     except (ValueError, KeyError, IndexError, TypeError, subprocess.TimeoutExpired, TimeoutError) as error:
         record['error'] = str(error)
     record['total_s'] = round(time.perf_counter() - started, 3)
+    record['model_request_count'] = model_request_count(record)
     save_record(record)
     return record
 
@@ -479,6 +511,8 @@ def suggest_opportunities(raw, video_name, record_id, selected_ids, version=None
             record['validation_warnings'] = record['analysis']['warnings']
             record['validation_status'] = 'passed_with_warnings' if record['validation_warnings'] or record.get('request_warnings') else 'passed'
             record.update(status='success', cost=None, cost_note='未设置单价；按返回的 usage 核算。')
+    except MediaProcessingError as error:
+        record.update(error=str(error), media_error=error.detail)
     except ContractError as error:
         record.update(error=str(error), validation_error=error.detail, validation_status='failed',
                       validation_warnings=error.detail.get('warnings', []))
@@ -678,6 +712,8 @@ def suggest_gameplay(raw, video_name, record_id, selected_ids, version=None, mod
             record['validation_warnings'] = record['analysis'].get('warnings', [])
             record['validation_status'] = ('passed_with_warnings' if record['validation_warnings'] or record.get('request_warnings') else 'passed')
             record.update(status='success', cost=None, cost_note='未设置单价；按返回的 usage 核算。')
+    except MediaProcessingError as error:
+        record.update(error=str(error), media_error=error.detail)
     except ContractError as error:
         record.update(error=str(error), validation_error=error.detail, validation_status='failed')
     except HTTPError as error:
@@ -893,6 +929,8 @@ def analyze(raw, model, mode, fps, video_name, prompt_version=None):
             if record['finish_reason'] not in ('stop', 'STOP'):
                 raise ValueError('模型未正常结束，原始输出已保留，请人工检查。')
             record.update(status='success', cost=None, cost_note='未设置单价；按 Beeroute 返回的 usage 与广场单价核算。')
+    except MediaProcessingError as error:
+        record.update(error=str(error), media_error=error.detail)
     except HTTPError as error:
         record['error'] = f'模型 API HTTP {error.code}，请检查凭据、模型权限或额度。'
     except URLError:

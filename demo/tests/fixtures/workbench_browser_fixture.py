@@ -13,7 +13,10 @@ SAMPLE='S05_传球投篮.mp4'
 SHA=hashlib.sha256(app.read_sample(SAMPLE)).hexdigest()
 META={'duration_s':16.68,'width':1920,'height':1080}
 COMMON={'status':'success','video_name':SAMPLE,'video_sha256':SHA,'metadata':META,'model':'qwen3-vl-plus',
-        'total_s':0,'record_file':'FIXTURE-only.json'}
+        'total_s':0,'record_file':'FIXTURE-only.json',
+        # Synthetic usage for display testing only; no provider/model call occurs.
+        'usage':{'prompt_tokens':1200,'completion_tokens':300,'total_tokens':1500,
+                 'prompt_tokens_details':{'image_tokens':900,'cached_tokens':0}}}
 EVENTS={**COMMON,'record_id':'a'*32,'stage':'events','prompt_file':'prompts/v14/events.txt','mode':'direct','fps':2,
         'analysis':{'summary':'本地界面夹具，不是真实模型结果','limitations':[], 'events':[
             {'observation_id':'e1','start_s':1,'end_s':4,'observation_s':3,'description':'人物持球',

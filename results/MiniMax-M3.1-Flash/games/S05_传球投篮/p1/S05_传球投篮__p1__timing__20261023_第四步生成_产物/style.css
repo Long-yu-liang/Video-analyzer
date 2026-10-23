@@ -1,0 +1,42 @@
+#game { width: 100%; height: 100%; min-height: 260px; position: relative; display: flex; align-items: center; justify-content: center; box-sizing: border-box; padding: 12px; color: #fff; background: transparent; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; user-select: none; -webkit-user-select: none; }
+#game * { box-sizing: border-box; }
+#game .panel { width: min(760px, 100%); max-height: 100%; padding: clamp(14px, 3vw, 26px); border: 1px solid rgba(255,255,255,.2); border-radius: 20px; background: linear-gradient(145deg, rgba(10,25,48,.86), rgba(17,38,66,.68)); box-shadow: 0 16px 45px rgba(0,0,0,.28); backdrop-filter: blur(8px); }
+#game .header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: clamp(12px, 3vh, 24px); }
+#game .title { margin: 0; font-size: clamp(20px, 4vw, 30px); font-weight: 800; letter-spacing: .04em; }
+#game .status { color: #cfe8ff; font-size: clamp(13px, 2.2vw, 17px); text-align: right; }
+#game .trajectory { position: relative; width: 100%; height: clamp(100px, 22vh, 160px); overflow: hidden; border: 1px solid rgba(255,255,255,.12); border-radius: 16px; background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(0,0,0,.16)); }
+#game .route { position: absolute; z-index: 1; left: 5%; right: 5%; top: 50%; height: 5px; transform: translateY(-50%); border-radius: 999px; background: linear-gradient(90deg, rgba(255,255,255,.18), rgba(255,255,255,.08)); box-shadow: 0 0 0 1px rgba(255,255,255,.05); }
+#game .catch-zone { position: absolute; z-index: 2; top: 10%; bottom: 10%; border: 2px solid #68f0a6; border-radius: 12px; background: linear-gradient(180deg, rgba(71,224,139,.24), rgba(71,224,139,.08)); box-shadow: 0 0 18px rgba(83,238,151,.28); }
+#game .hands { position: absolute; z-index: 3; top: 20%; bottom: 20%; transform-origin: center; pointer-events: none; }
+#game .hands::before, #game .hands::after { content: ''; position: absolute; left: 12%; right: 12%; height: 12px; border-radius: 999px 999px 5px 5px; background: #d9efff; box-shadow: 0 2px 7px rgba(0,0,0,.3); }
+#game .hands::before { top: -4px; transform: rotate(-4deg); }
+#game .hands::after { bottom: -4px; transform: rotate(4deg); }
+#game .ball { position: absolute; z-index: 4; top: 50%; left: 0; width: clamp(34px, 7vw, 48px); aspect-ratio: 1; transform: translate(-50%, -50%); border: 3px solid #6b2d13; border-radius: 50%; background: radial-gradient(circle at 34% 28%, #ffbf69 0 8%, #ed7629 28%, #c84d13 100%); box-shadow: 0 8px 18px rgba(0,0,0,.35); pointer-events: none; }
+#game .ball::before, #game .ball::after { content: ''; position: absolute; inset: 3px; border: 2px solid rgba(83,35,12,.65); border-radius: 50%; }
+#game .ball::before { transform: rotate(38deg) scaleY(.36); }
+#game .ball::after { transform: rotate(-38deg) scaleY(.36); }
+#game .labels { display: flex; justify-content: space-between; margin-top: 8px; color: rgba(235,246,255,.76); font-size: 12px; }
+#game .zone-label { color: #91f7ba; font-weight: 700; }
+#game .hint { margin: clamp(12px, 3vh, 22px) 0 12px; color: #eef7ff; font-size: clamp(14px, 2.4vw, 18px); text-align: center; }
+#game .action { display: block; width: min(360px, 100%); min-height: 58px; margin: 0 auto; border: 0; border-radius: 15px; color: #10233b; background: linear-gradient(180deg, #8ceaff, #4dc7ef); box-shadow: 0 8px 0 #2486a9, 0 14px 24px rgba(0,0,0,.24); font: inherit; font-size: clamp(18px, 3vw, 23px); font-weight: 800; cursor: pointer; touch-action: manipulation; transition: transform .12s ease, filter .12s ease, opacity .12s ease; }
+#game .action:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-2px); }
+#game .action:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 3px 0 #2486a9, 0 8px 14px rgba(0,0,0,.24); }
+#game .action:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
+#game .action:disabled { cursor: default; opacity: .48; filter: saturate(.5); box-shadow: 0 4px 0 #527382; }
+#game .result { min-height: 28px; margin-top: 16px; color: #d8e9f8; font-size: clamp(14px, 2.3vw, 17px); font-weight: 700; text-align: center; }
+#game.success .status, #game.success .result { color: #8ff5b6; }
+#game.failure .status, #game.failure .result { color: #ffb1a8; }
+#game.success .catch-zone { background: rgba(71,224,139,.4); box-shadow: 0 0 26px rgba(83,238,151,.55); }
+#game.success .ball { animation: game-ball-catch .55s ease-out both; }
+#game.success .hands { animation: game-hands-close .45s ease-out both; }
+#game.failure.miss-early .ball { animation: game-ball-miss-early .58s ease-out both; }
+#game.failure.miss-late .ball, #game.failure.timeout .ball { animation: game-ball-miss-late .58s ease-out both; }
+#game.failure .hands { animation: game-hands-open .42s ease-out both; }
+#game .trajectory.passed .route { opacity: .45; }
+@keyframes game-ball-catch { 0% { transform: translate(-50%, -50%) scale(.72) rotate(-35deg); } 55% { transform: translate(-50%, -50%) scale(1.14) rotate(10deg); } 100% { transform: translate(-50%, -50%) scale(.9) rotate(0deg); } }
+@keyframes game-ball-miss-early { 0% { transform: translate(-50%, -50%) scale(1) rotate(0); opacity: 1; } 45% { transform: translate(-50%, -165%) scale(1.05) rotate(120deg); opacity: 1; } 100% { transform: translate(-50%, 18%) scale(.72) rotate(250deg); opacity: .28; } }
+@keyframes game-ball-miss-late { 0% { transform: translate(-50%, -50%) scale(1) rotate(0); opacity: 1; } 100% { transform: translate(38%, -185%) scale(.68) rotate(190deg); opacity: 0; } }
+@keyframes game-hands-close { 0% { transform: scaleY(1.45); } 65% { transform: scaleY(.48); } 100% { transform: scaleY(.64); } }
+@keyframes game-hands-open { 0% { transform: scaleY(.65); } 100% { transform: scaleY(1.55); } }
+@media (max-width: 520px) { #game { padding: 8px; } #game .panel { padding: 14px; border-radius: 16px; } #game .header { align-items: flex-start; flex-direction: column; gap: 4px; } #game .status { text-align: left; } #game .trajectory { height: 98px; } #game .action { min-height: 54px; } }
+@media (prefers-reduced-motion: reduce) { #game .ball, #game .hands { animation-duration: .01ms !important; } #game .action { transition: none; } }

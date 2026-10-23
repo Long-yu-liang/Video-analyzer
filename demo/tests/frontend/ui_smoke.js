@@ -26,10 +26,11 @@ function element(id = '') {
 
 const ids = ['model', 'mode', 'fps', 'eventPrompt', 'opportunityPrompt', 'gameplayPrompt', 'promptPreview', 'flowHint', 'sample', 'file', 'video', 'recognize', 'suggest', 'recommend', 'reset', 'reviewHint',
   'download', 'summary', 'metrics', 'points', 'events', 'limitations', 'catalogNote', 'gameplay', 'saveBrief',
-  'raw', 'status', 'configState'];
+  'raw', 'status', 'configState', 'tokenUsage'];
 const nodes = Object.fromEntries(ids.map(id => [id, element(id)]));
 
 let requestedURL, briefBody;
+let failMedia = false;
 let gameplayRecommendations = [{ point_id: 'p1', observation_id: 'e1', event_id: 'e1', time_s: 1.5,
   opportunity: '决定是否投篮', reason: '球已经在手中', game_id: 'choice', game_name: '剧情选择',
   fit: '持球且有可见分支', player_goal: '作出选择', player_action: '在动作里选一个',
@@ -69,6 +70,8 @@ const fetch = async (url, options = {}) => {
   }) };
   if (url.startsWith('/events?')) {
     requestedURL = url;
+    if (failMedia) return {ok:false,json:async()=>({status:'failed',stage:'events',
+      error:'视频分段/重新编码失败（ffmpeg，退出码 8987）',media_error:{operation:'transcode',exit_code:8987}})};
     return { ok: true, json: async () => ({ status: 'success', record_id: 'a'.repeat(32),
       record_file: 'events.json', model: 'qwen3-vl-plus', video_name: 'S05_传球投篮.mp4',
       prompt_file: 'prompts/v13/events.txt', total_s: 1,
@@ -101,7 +104,8 @@ const fetch = async (url, options = {}) => {
   }
   throw new Error('unexpected request ' + url);
 };
-vm.runInNewContext(script, {
+const usageScript = fs.readFileSync(path.join(__dirname, '../../web/assets/js/token-usage.js'), 'utf8');
+vm.runInNewContext(usageScript + '\n' + script, {
   document: { getElementById: id => nodes[id], createElement: () => element() },
   fetch, URLSearchParams, encodeURIComponent, URL, Blob, setTimeout, console,
 });
@@ -126,6 +130,7 @@ vm.runInNewContext(script, {
   await nodes.sample.onchange();
   assert.equal(nodes.recognize.disabled, false);
   await nodes.recognize.onclick();
+  assert.equal(nodes.tokenUsage.children.length, 3, 'stage usage remains visible after a call');
   assert.match(requestedURL, /^\/events\?/);
   assert.match(requestedURL, /version=v14/);
   assert.match(requestedURL, /model=qwen3-vl-plus/);
@@ -196,5 +201,12 @@ vm.runInNewContext(script, {
   assert.equal(nodes.eventPrompt.value, 'v14');
   assert.equal(nodes.summary.textContent, '尚未调用模型。没有预置分析结果。');
   assert.match(nodes.status.textContent, /初始状态/);
+  nodes.sample.value='S05_传球投篮.mp4';
+  await nodes.sample.onchange();
+  failMedia=true;
+  await nodes.recognize.onclick();
+  assert.equal(nodes.summary.textContent,'视频预处理失败，分析未完成。');
+  assert.match(nodes.status.textContent,/8987/);
+  assert.equal(nodes.suggest.disabled,true);
   console.log('UI point seek and empty state OK');
 })().catch(error => { console.error(error); process.exitCode = 1; });

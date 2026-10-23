@@ -28,6 +28,12 @@ def point():
 
 class ProjectChecks(unittest.TestCase):
     @unittest.skipUnless(shutil.which('node'), 'Node.js not installed')
+    def test_delete_ui(self):
+        result = subprocess.run(['node', str(app.DEMO / 'tests/frontend/project_delete.js')],
+                                capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipUnless(shutil.which('node'), 'Node.js not installed')
     def test_workbench_model(self):
         result=subprocess.run(['node',str(app.DEMO/'tests/frontend/workbench_model.js')],capture_output=True,text=True,timeout=20)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
@@ -63,6 +69,35 @@ class ProjectChecks(unittest.TestCase):
         data=state();data['points']=[point(),point()]
         with self.assertRaises(ValueError):projects.validate(data)
 
+    def test_delete_is_recoverable_revision_checked_and_preserves_results(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            store = projects.Store(root / 'projects')
+            item = store.save({'state': state()})
+            other = store.save({'state': state()})
+            original = root / 'original.mp4'
+            result = root / 'results.json'
+            original.write_bytes(b'original video')
+            result.write_bytes(b'original inference')
+            with self.assertRaises(projects.Conflict):
+                store.delete({'project_id': item['project_id'], 'revision': 0})
+            for bad in ('../results', '', 'z' * 32):
+                with self.assertRaises(ValueError):
+                    store.delete({'project_id': bad, 'revision': 1})
+            with patch('projects.Path.rename', side_effect=OSError('disk error')):
+                with self.assertRaises(OSError):store.delete(item)
+            self.assertEqual(store.read(item['project_id']), item)
+            self.assertTrue(store.delete(item)['recoverable'])
+            self.assertEqual([p['project_id'] for p in store.listing()], [other['project_id']])
+            with self.assertRaisesRegex(ValueError, '不存在'):store.read(item['project_id'])
+            with self.assertRaisesRegex(ValueError, '不存在'):store.save(item)
+            with self.assertRaises(ValueError):store.delete(item)
+            archived = list((root / 'projects' / '.trash').glob('*'))
+            self.assertEqual(len(archived), 1)
+            self.assertEqual(json.loads((archived[0] / 'project.json').read_text(encoding='utf-8')), item)
+            self.assertTrue(list(archived[0].glob('revision-*.json')))
+            self.assertEqual(original.read_bytes(), b'original video')
+            self.assertEqual(result.read_bytes(), b'original inference')
     def test_confirmation_export_and_conflict(self):
         data=state();data['points']=[point()]
         project={'project_id':'a'*32,'revision':1,'state':data}
@@ -73,6 +108,10 @@ class ProjectChecks(unittest.TestCase):
         with self.assertRaises(ValueError):projects.export_project(project,True)
         self.assertEqual(len(projects.export_project(project)['points']),1)
         data['points'][0]['confirmed']=True;data['points'][0]['brief']['rules']=''
+        self.assertEqual(len(projects.export_project(project,True)['points']),1)
+        data['points'][0]['brief']={}
+        self.assertEqual(len(projects.export_project(project,True)['points']),1)
+        data['points'][0]['design']['player_action']=''
         with self.assertRaises(ValueError):projects.export_project(project,True)
         data['points']=[point(),{**point(),'id':'manual_other'}]
         with self.assertRaisesRegex(ValueError,'同一时间'):projects.export_project(project,True)
@@ -118,12 +157,16 @@ class ProjectChecks(unittest.TestCase):
                 source=Path(folder)/'original.json'
                 original={'record_id':'c'*32,'stage':'gameplay','status':'success','video_sha256':'a'*64,
                           'analysis':{'recommendations':[]},'raw_response':{'private':'raw payload'},
+                          'usage':{'prompt_tokens':123,'completion_tokens':45,'total_tokens':168},
+                          'segments':[{'status':'success','usage':{'total_tokens':168},'raw_response':{'private':'not for browser'}}],
                           'observations':[{'point_id':'p1','frame_time_s':2,'preview_jpeg_base64':'old-inline-image'}]}
                 source.write_text(json.dumps(original),encoding='utf-8')
                 with patch.object(app,'saved_record_paths',return_value=[source]):
                     restored=request('/project-record?record_id='+'c'*32)
                 self.assertTrue(restored['restored_summary'])
                 self.assertNotIn('raw_response',restored)
+                self.assertEqual(restored['usage'],original['usage'])
+                self.assertEqual(restored['segments'],[{'status':'success','usage':{'total_tokens':168}}])
                 self.assertNotIn('preview_jpeg_base64',restored['observations'][0])
                 self.assertEqual(json.loads(source.read_text(encoding='utf-8')),original)
                 item['state']['points']=[point()];saved=request('/projects',item)
@@ -131,6 +174,13 @@ class ProjectChecks(unittest.TestCase):
                 with self.assertRaises(HTTPError) as caught:request('/projects',item)
                 self.assertEqual(caught.exception.code,409)
                 self.assertEqual(saved['revision'],2)
+                with self.assertRaises(HTTPError) as caught:request('/project-delete', saved, token=False)
+                self.assertEqual(caught.exception.code, 403)
+                with self.assertRaises(HTTPError) as caught:request('/project-delete', item)
+                self.assertEqual(caught.exception.code, 409)
+                self.assertTrue(request('/project-delete', saved)['deleted'])
+                self.assertEqual(request('/projects'), [])
+                self.assertTrue(source.exists())
             finally:
                 server.shutdown();server.server_close();worker.join()
 
