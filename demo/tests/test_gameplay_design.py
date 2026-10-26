@@ -12,7 +12,10 @@ import app
 import gameplay_design as design
 
 
-class DesignChecks(unittest.TestCase):
+from test_support import MockModelTestCase
+
+
+class DesignChecks(MockModelTestCase):
     def setUp(self):
         self.spec = design.templates()
         self.catalog = app.load_game_catalog()

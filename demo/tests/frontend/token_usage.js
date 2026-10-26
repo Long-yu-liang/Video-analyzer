@@ -22,6 +22,7 @@ assert.equal(read({usage:{total_tokens:999},segments:[record,record]}).total, 30
 const partial = read({usage:{total_tokens:0},segments:[record,{status:'failed'}]});
 assert.equal(partial.total, null, 'missing segment usage is not zero');
 assert.equal(partial.partial, true);
+assert.equal(partial.known.total, 150, 'partial failures retain known provider usage');
 const host = node('div');render(host, record, '失败请求');render(host, null, '尚未调用');
 const text = item => [item.textContent || '', ...item.children.map(text)].join(' ');
 assert.match(text(host), /输入 120 · 输出 30 · 总计 150/);
@@ -30,4 +31,7 @@ assert.match(text(host), /暂无调用记录/);
 assert.match(text(host), /查看原始 usage/);
 const absent = node('div');render(absent,{usage:{},model_call_made:false});
 assert.match(text(absent), /未返回/);assert.match(text(absent), /未调用模型/);
+const failed = node('div');render(failed,{status:'failed',segments:[record,{status:'failed'}]});
+assert.match(text(failed), /已返回用量小计：输入 120 · 输出 30 · 总计 150 Token/);
+assert.match(text(failed), /缺失请求的用量未知，不计为 0/);
 console.log('Token usage: reported counts, missing vs zero, failed calls, segments and rendering OK');

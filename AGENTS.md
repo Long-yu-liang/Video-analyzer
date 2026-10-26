@@ -38,4 +38,4 @@ Existing history uses concise English summaries, including imperative messages; 
 
 ## Security & Configuration
 
-Copy `.env.example` to `.env`, configure `BEEROUTE_MODELS` and credentials, then restart the server. Never commit or print API keys; `.env` is ignored. Preserve original videos, source attribution, and historical experiment data.
+Configure models, credentials, and tool paths using the page's Settings dialog. Private settings live in gitignored `config/settings.json` (plaintext); never commit or print keys. `.env` is no longer automatically read. Real process environment variables remain a fallback before settings are saved. Each model workflow uses an immutable settings snapshot. Preserve original videos, source attribution, and historical experiment data.

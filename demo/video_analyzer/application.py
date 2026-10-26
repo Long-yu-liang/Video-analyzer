@@ -26,34 +26,34 @@ from .models import requests as model_requests, client as model_client
 from .models.client import TruncatedOutputError
 from .catalog import prompts as prompt_catalog
 from .storage import records as record_store
+from . import settings
 
 from .paths import DEMO, ROOT, MAX_VIDEO
 
 
-def load_env(path):
-    """读取项目根目录 .env；已存在的真实环境变量优先，不被文件覆盖。"""
-    if not path.is_file():
-        return
-    for line in path.read_text(encoding='utf-8').splitlines():
-        line = line.strip()
-        if not line or line.startswith('#') or '=' not in line:
-            continue
-        key, value = line.split('=', 1)
-        key, value = key.strip(), value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
-            os.environ[key] = value
-
-
-load_env(ROOT / '.env')
+# Configuration is loaded from the private settings file, never from .env.
 
 
 def configured_models():
     """BEEROUTE_MODELS 用英文逗号分隔。页面上选择其中一个，每次只调用它。"""
-    return [m.strip() for m in os.environ.get('BEEROUTE_MODELS', '').split(',') if m.strip()]
+    try:
+        value = settings.Store(ROOT).read()['values']['BEEROUTE_MODELS']
+    except (ValueError, OSError):
+        value = settings.DEFAULTS['BEEROUTE_MODELS']
+    return [m.strip() for m in value.split(',') if m.strip()]
 
 
 MODEL_NAMES = configured_models()
 MODELS = {name: 'beeroute' for name in MODEL_NAMES}
+runtime_config = settings.scoped(lambda *a, **kw: (ROOT, MODELS))
+
+
+def runtime_models():
+    active = settings.CURRENT.get()
+    if active is not None:
+        return active['_models']
+    return {name: 'beeroute' for name in configured_models()} if settings.Store(ROOT).path.exists() else MODELS
+
 PROVIDER_KEYS = {'qwen': 'DASHSCOPE_API_KEY', 'gemini': 'GEMINI_API_KEY', 'beeroute': 'BEEROUTE_API_KEY'}
 TOKEN = secrets.token_urlsafe(24)
 
@@ -108,7 +108,7 @@ def supports_video_audio(model):
 
 
 def build_request(model, mode, fps, data, frames, metadata, prompt):
-    return model_requests.build_request(model, mode, fps, data, frames, metadata, prompt, MODELS, supports_video_audio)
+    return model_requests.build_request(model, mode, fps, data, frames, metadata, prompt, runtime_models(), supports_video_audio)
 
 
 def modality_token_counts(usage):
@@ -245,20 +245,25 @@ def analyze_segment(path, folder, core_start, core_end, clip_start, clip_end,
         output = call_v13_model(url, body, key, segment)
         analysis = validate_stage_events(output, metadata['duration_s'])
         segment['analysis'] = analysis
+        segment['validation_warnings'] = analysis.get('validation_warnings', [])
         segment['status'] = 'success'
     except TruncatedOutputError as error:
         segment['error'] = str(error)
         if depth >= 1 or core_end - core_start <= 6.:
             raise
         middle = (core_start + core_end) / 2.
-        return (analyze_segment(path, folder, core_start, middle, max(0., core_start - 1.), middle,
+        recovered = (analyze_segment(path, folder, core_start, middle, max(0., core_start - 1.), middle,
                                 prompt, key, parent, depth + 1)
                 + analyze_segment(path, folder, middle, core_end, max(0., middle - 1.), core_end,
                                   prompt, key, parent, depth + 1))
+        segment['recovered_by_split'] = True
+        return recovered
     except (ValueError, KeyError, IndexError, TypeError, HTTPError, URLError) as error:
         segment['error'] = str(error)
         if isinstance(error, MediaProcessingError):
             segment.update(media_error=error.detail, preprocessing_status='failed')
+        if isinstance(error, ContractError):
+            segment['validation_error'] = error.detail
         raise
     # Only one segment owns each original-video time, despite overlapping input clips.
     events = []
@@ -272,6 +277,7 @@ def analyze_segment(path, folder, core_start, core_end, clip_start, clip_end,
             shifted['segment_clip_start_s'] = clip_start
             shifted['segment_core_start_s'] = core_start
             events.append(shifted)
+    segment['mapped_events'] = events
     return events
 
 
@@ -299,23 +305,55 @@ def deduplicate_segment_events(events):
 
 def analyze_events_segmented(path, folder, metadata, prompt, key, record):
     record['segments'] = []
-    all_events = []
+    record['segment_plan'] = [{'start_s': start, 'end_s': end}
+                              for start, end, _, _ in segment_windows(metadata['duration_s'])]
     for start, end, clip_start, clip_end in segment_windows(metadata['duration_s']):
-        all_events.extend(analyze_segment(path, folder, start, end, clip_start, clip_end,
-                                          prompt, key, record))
-    all_events, record['deduplicated_overlap_events'] = deduplicate_segment_events(all_events)
+        analyze_segment(path, folder, start, end, clip_start, clip_end, prompt, key, record)
+    summarize_event_segments(record, complete=True)
+
+
+def summarize_event_segments(record, complete=False):
+    """Retain usable segments and reported costs even when a later segment fails."""
+    metadata = record['metadata']
     successful = [item for item in record['segments'] if item['status'] == 'success']
+    all_events = [event for item in successful for event in item.get('mapped_events', [])]
+    all_events, record['deduplicated_overlap_events'] = deduplicate_segment_events(all_events)
     summaries = [f"约{item['core_start_s']:g}–{item['core_end_s']:g}秒：{item['analysis']['summary']}"
                  for item in successful]
     limitations = (['长视频分段识别；相邻片段重叠约 1 秒，事件按代表画面归入唯一时间段。']
                    if metadata['duration_s'] > 25. else ['短视频按完整画面时间轴识别；图片或视频输入均不分析音轨。'])
     for item in successful:
         limitations.extend(f"{item['clip_start_s']:g}秒片段：{value}" for value in item['analysis']['limitations'])
-    record['analysis'] = validate_stage_events(json.dumps({'summary': '；'.join(summaries),
+    warnings = [{**warning, 'core_start_s': item['core_start_s'], 'core_end_s': item['core_end_s']}
+                for item in successful for warning in item.get('validation_warnings', [])]
+    record['validation_warnings'] = warnings
+    if not complete:
+        limitations.insert(0, '仅展示已通过校验的片段，不代表全片分析成功；不能直接用于第二步。')
+    if successful:
+        analysis = validate_stage_events(json.dumps({'summary': '；'.join(summaries),
                                                            'events': all_events, 'limitations': limitations},
                                                           ensure_ascii=False), metadata['duration_s'])
-    record['usage'] = {name: sum((item.get('usage') or {}).get(name, 0) for item in record['segments'])
-                       for name in ('prompt_tokens', 'completion_tokens', 'total_tokens')}
+        record['analysis' if complete else 'partial_analysis'] = analysis
+    # Unknown usage is not zero. Keep complete totals and known subtotals separate.
+    calls = [item for item in record['segments'] if model_request_count(item)]
+    usage, subtotal = {}, {}
+    for name in ('prompt_tokens', 'completion_tokens', 'total_tokens'):
+        values = [(item.get('usage') or {}).get(name) for item in calls]
+        known = [v for v in values if type(v) in (int, float) and math.isfinite(v) and v >= 0]
+        if known:
+            subtotal[name] = sum(known)
+        if values and len(known) == len(values):
+            usage[name] = sum(known)
+    record.update(usage=usage, usage_reported_subtotal=subtotal,
+                  usage_incomplete=bool(calls) and len(usage) < 3)
+    boundaries = sorted({0., metadata['duration_s'], *(v for item in record['segments']
+                         for v in (item['core_start_s'], item['core_end_s']))})
+    ranges = []
+    for start, end in zip(boundaries, boundaries[1:]):
+        matching = [item for item in record['segments'] if item['core_start_s'] <= start and item['core_end_s'] >= end]
+        state = 'success' if any(item['status'] == 'success' for item in matching) else 'failed' if matching else 'unprocessed'
+        ranges.append({'start_s': start, 'end_s': end, 'status': state})
+    record['segment_coverage'] = {'complete': complete, 'ranges': ranges}
     record['video_tokens'] = sum(item.get('video_tokens') or 0 for item in record['segments'])
     record['audio_tokens'] = 0
     record['audio_verification'] = 'not_sent'
@@ -323,14 +361,16 @@ def analyze_events_segmented(path, folder, metadata, prompt, key, record):
     record['request_bytes'] = sum(item.get('request_bytes') or 0 for item in record['segments'])
     record['sent_video_bytes'] = sum(item.get('sent_video_bytes') or 0 for item in record['segments'])
     record['api_roundtrip_s'] = round(sum(item.get('api_roundtrip_s') or 0 for item in record['segments']), 3)
-    record['finish_reason'] = 'stop'
-    record['status'] = 'success'
+    if complete:
+        record['finish_reason'] = 'stop'
+        record['status'] = 'success'
 
 
+@runtime_config
 def analyze_events(raw, video_name, version='v13', model='qwen3-vl-plus', mode='direct', fps=2.):
-    if model not in MODELS or mode not in ('direct', 'frames') or fps not in (0.5, 1., 2.):
-        raise ValueError('无效的模型、输入方式或采样率。请在页面上选择 .env 里配置的模型。')
-    key = os.environ.get('BEEROUTE_API_KEY')
+    if model not in runtime_models() or mode not in ('direct', 'frames') or fps not in (0.5, 1., 2.):
+        raise ValueError('无效的模型、输入方式或采样率。请在页面设置中配置模型。')
+    key = settings.get('BEEROUTE_API_KEY')
     if not key:
         raise ValueError('尚未配置 BEEROUTE_API_KEY。')
     if not raw or len(raw) > MAX_VIDEO:
@@ -383,6 +423,12 @@ def analyze_events(raw, video_name, version='v13', model='qwen3-vl-plus', mode='
         record['error'] = '模型 API 网络连接失败。'
     except (ValueError, KeyError, IndexError, TypeError, subprocess.TimeoutExpired, TimeoutError) as error:
         record['error'] = str(error)
+    if record.get('segments') and record['status'] != 'success':
+        summarize_event_segments(record)
+    if record.get('analysis', {}).get('validation_warnings'):
+        record['validation_warnings'] = record['analysis']['validation_warnings']
+    if record['status'] == 'success':
+        record['validation_status'] = 'passed_with_warnings' if record.get('validation_warnings') else 'passed'
     record['total_s'] = round(time.perf_counter() - started, 3)
     record['model_request_count'] = model_request_count(record)
     save_record(record)
@@ -434,6 +480,7 @@ def revalidate_opportunity_record(record_id):
     return record
 
 
+@runtime_config
 def suggest_opportunities(raw, video_name, record_id, selected_ids, version=None, model='qwen3-vl-plus'):
     if not selected_ids or len(selected_ids) != len(set(selected_ids)):
         raise ValueError('请至少审核并选择一条不重复的事件。')
@@ -443,9 +490,9 @@ def suggest_opportunities(raw, video_name, record_id, selected_ids, version=None
     by_id = {event['observation_id']: event for event in parent['analysis']['events']}
     if any(item not in by_id for item in selected_ids):
         raise ValueError('选择了不属于事件记录的画面。')
-    if model not in MODELS:
-        raise ValueError('无效的模型。请在页面上选择 .env 里配置的模型。')
-    key = os.environ.get('BEEROUTE_API_KEY')
+    if model not in runtime_models():
+        raise ValueError('无效的模型。请在页面设置中配置模型。')
+    key = settings.get('BEEROUTE_API_KEY')
     if not key:
         raise ValueError('尚未配置 BEEROUTE_API_KEY。')
     prompt_path, prompt = load_stage_prompt('opportunities', version)
@@ -502,7 +549,7 @@ def suggest_opportunities(raw, video_name, record_id, selected_ids, version=None
             body = {'model': model, 'messages': [{'role': 'user', 'content': content}], 'max_tokens': 4096}
             if str(model).startswith('qwen'):
                 body['enable_thinking'] = False
-            base = os.environ.get('BEEROUTE_BASE_URL', 'https://beeroute.ai/v1').rstrip('/')
+            base = settings.get('BEEROUTE_BASE_URL', 'https://beeroute.ai/v1').rstrip('/')
             if not base.startswith('https://'):
                 raise ValueError('模型 API 地址必须使用 HTTPS。')
             record['preprocess_s'] = round(time.perf_counter() - started, 3)
@@ -598,6 +645,7 @@ def read_gameplay_frame(record_id, point_id):
     return data
 
 
+@runtime_config
 def suggest_gameplay(raw, video_name, record_id, selected_ids, version=None, model='qwen3-vl-plus', times=None):
     if not selected_ids or len(selected_ids) != len(set(selected_ids)):
         raise ValueError('请至少选择一个不重复的交互点。')
@@ -616,9 +664,9 @@ def suggest_gameplay(raw, video_name, record_id, selected_ids, version=None, mod
         gameplay_design.number(value, 0, parent['metadata']['duration_s'], '画面位置')
         by_id[point_id]['original_time_s'] = by_id[point_id]['time_s']
         by_id[point_id]['requested_time_s'] = value
-    if model not in MODELS:
-        raise ValueError('无效的模型。请在页面上选择 .env 里配置的模型。')
-    key = os.environ.get('BEEROUTE_API_KEY')
+    if model not in runtime_models():
+        raise ValueError('无效的模型。请在页面设置中配置模型。')
+    key = settings.get('BEEROUTE_API_KEY')
     if not key:
         raise ValueError('尚未配置 BEEROUTE_API_KEY。')
     prompt_path, prompt = load_gameplay_prompt(version)
@@ -696,7 +744,7 @@ def suggest_gameplay(raw, video_name, record_id, selected_ids, version=None, mod
             body = {'model': model, 'messages': [{'role': 'user', 'content': content}], 'max_tokens': 8192 if design_v2 else 4096}
             if str(model).startswith('qwen'):
                 body['enable_thinking'] = False
-            base = os.environ.get('BEEROUTE_BASE_URL', 'https://beeroute.ai/v1').rstrip('/')
+            base = settings.get('BEEROUTE_BASE_URL', 'https://beeroute.ai/v1').rstrip('/')
             if not base.startswith('https://'):
                 raise ValueError('模型 API 地址必须使用 HTTPS。')
             record['preprocess_s'] = round(time.perf_counter() - started, 3)
@@ -830,11 +878,12 @@ def save_gameplay_brief(payload):
     return record
 
 
+@runtime_config
 def analyze(raw, model, mode, fps, video_name, prompt_version=None):
-    if model not in MODELS or mode not in ('direct', 'frames') or fps not in (0.5, 1., 2.):
-        raise ValueError('无效的模型、模式或采样频率。请在页面上选择 .env 里配置的模型。')
-    keyname = PROVIDER_KEYS[MODELS[model]]
-    key = os.environ.get(keyname)
+    if model not in runtime_models() or mode not in ('direct', 'frames') or fps not in (0.5, 1., 2.):
+        raise ValueError('无效的模型、模式或采样频率。请在页面设置中配置模型。')
+    keyname = PROVIDER_KEYS[runtime_models()[model]]
+    key = settings.get(keyname)
     if not key:
         raise ValueError(f'尚未配置 {keyname}。没有调用模型，也没有生成分析结果。')
     if not raw or len(raw) > MAX_VIDEO:
@@ -866,9 +915,9 @@ def analyze(raw, model, mode, fps, video_name, prompt_version=None):
             record['request_options'] = {'fps': fps, 'response_format': body.get('response_format')}
             record['api_attempts'] = []
             record['preprocess_s'] = round(time.perf_counter()-start, 3)
-            record['actual_prompt'] = body['contents'][0]['parts'][0]['text'] if MODELS[model] == 'gemini' else body['messages'][0]['content'][0]['text']
+            record['actual_prompt'] = body['contents'][0]['parts'][0]['text'] if runtime_models()[model] == 'gemini' else body['messages'][0]['content'][0]['text']
             headers = {'Content-Type': 'application/json'}
-            headers.update({'x-goog-api-key': key} if MODELS[model] == 'gemini' else {'Authorization': 'Bearer ' + key})
+            headers.update({'x-goog-api-key': key} if runtime_models()[model] == 'gemini' else {'Authorization': 'Bearer ' + key})
             api_start = time.perf_counter()
             try:
                 record['api_attempts'].append({'response_format': body.get('response_format')})
@@ -892,7 +941,7 @@ def analyze(raw, model, mode, fps, video_name, prompt_version=None):
                     result = json.load(response)
             record['api_roundtrip_s'] = round(time.perf_counter()-api_start, 3)
             record['raw_response'] = result
-            if MODELS[model] == 'gemini':
+            if runtime_models()[model] == 'gemini':
                 candidate = result.get('candidates', [{}])[0]
                 output = ''.join(p.get('text', '') for p in candidate.get('content', {}).get('parts', []) if not p.get('thought'))
                 record['usage'] = result.get('usageMetadata', {})
@@ -948,7 +997,10 @@ from .web.server import Handler
 
 
 def main():
-    port = int(os.environ.get('PORT', '8765'))
+    import argparse
+    parser = argparse.ArgumentParser(description='Local video interaction workbench')
+    parser.add_argument('--port', type=int, default=int(os.environ.get('PORT', '8765')))
+    port = parser.parse_args().port
     server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
     where = '、'.join(MODEL_NAMES) or '（未设置 BEEROUTE_MODELS）'
     print(f'视频理解工作台：http://127.0.0.1:{port}')

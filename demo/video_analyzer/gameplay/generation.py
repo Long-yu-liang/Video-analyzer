@@ -12,6 +12,7 @@ import threading
 from urllib.request import Request, urlopen
 from ..projects.store import Store, Conflict, identifier
 from ..storage import games as game_store
+from .. import settings
 
 LOCK = threading.RLock()
 ACTIVE = set()
@@ -89,13 +90,14 @@ def validate_output(data):
 
 
 def resolve_node():
-    configured = os.environ.get('NODE_BINARY', '').strip()
+    configured = settings.get('NODE_BINARY', '').strip()
     node = (shutil.which(configured) or (configured if Path(configured).is_file() else None)) if configured else shutil.which('node')
     if not node:
         raise ValueError('服务进程未找到 Node.js；请设置 NODE_BINARY 为 node.exe 的绝对路径或配置 PATH 后重启。')
     return node
 
 
+@settings.scoped(lambda root, *a, **kw: (root, None))
 def generate(root, payload, opener=None):
     opener = opener or urlopen
     if type(payload.get('revision')) is not int:
@@ -111,9 +113,9 @@ def generate(root, payload, opener=None):
             raise ValueError('玩法已修改，请重新生成，不要修复旧输入。')
         if not isinstance(problem, str) or not 1 <= len(problem.strip()) <= 6000:
             raise ValueError('请填写不超过 6000 字的修复要求。')
-    key = os.environ.get('MINIMAX_API_KEY', '')
+    key = settings.get('MINIMAX_API_KEY', '')
     if not key:
-        raise ValueError('尚未配置 MINIMAX_API_KEY，请配置并重启服务。')
+        raise ValueError('尚未配置 MINIMAX_API_KEY，请在页面设置中保存密钥。')
     resolve_node()  # Preflight before any paid request, not after generation.
     active_key = (project['project_id'], data['point_id'])
     with LOCK:
@@ -125,7 +127,7 @@ def generate(root, payload, opener=None):
               'project_id': project['project_id'], 'project_revision': project['revision'], 'point_id': data['point_id'],
               'input': data, 'input_hash': digest, 'created_at': datetime.now(timezone.utc).isoformat(),
               'parent_record_id': parent['record_id'] if parent else None, 'problem': problem,
-              'model': os.environ.get('MINIMAX_MODEL', 'MiniMax-M3.1-Flash'), 'model_call_made': False}
+              'model': settings.get('MINIMAX_MODEL', 'MiniMax-M3.1-Flash'), 'model_call_made': False}
     try:
         prompt_path = Path(root) / 'prompts/game-generation/v1' / ('repair.txt' if parent else 'generate.txt')
         prompt = prompt_path.read_text(encoding='utf-8')
@@ -137,7 +139,7 @@ def generate(root, payload, opener=None):
                 {'role': 'user', 'content': json.dumps(request_input, ensure_ascii=False)}],
                 'max_completion_tokens': 16384, 'reasoning_effort': 'medium'}
         record['request'] = body
-        base = os.environ.get('MINIMAX_BASE_URL', 'https://api.minimax.cn/v1').rstrip('/')
+        base = settings.get('MINIMAX_BASE_URL', 'https://api.minimax.cn/v1').rstrip('/')
         if not base.startswith('https://'):
             raise ValueError('MiniMax 接口必须使用 HTTPS。')
         record['endpoint'] = base + '/chat/completions'

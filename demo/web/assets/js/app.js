@@ -81,7 +81,7 @@ function ready(){
     :`第一步使用 ${$('model').value||'未选模型'}、${sampling}、${$('fps').value} fps。第二步和第三步沿用所选模型。`;
   const key=config.configured.beeroute?'已配置':'待配置 BEEROUTE_API_KEY';
   const names=Object.keys(config.models||{});
-  $('configState').textContent=names.length?`密钥${key}。事件 ${$('eventPrompt').value||'未选'}，机会 ${$('opportunityPrompt').value||'未选'}，玩法 ${$('gameplayPrompt').value||'未选'}。当前模型 ${$('model').value||'未选'}，结果写入 results/${$('model').value||'模型名'}/。`:'请在 .env 设置 BEEROUTE_MODELS 后重启。';
+  $('configState').textContent=names.length?`密钥${key}。事件 ${$('eventPrompt').value||'未选'}，机会 ${$('opportunityPrompt').value||'未选'}，玩法 ${$('gameplayPrompt').value||'未选'}。当前模型 ${$('model').value||'未选'}，结果写入 results/${$('model').value||'模型名'}/。`:'请打开右上角设置，配置 API 和模型。';
   renderTokenUsage();
   if(typeof Workbench!=='undefined')Workbench.notify();
 }
@@ -95,6 +95,14 @@ fetch('/config').then(r=>r.json()).then(c=>{
   sample.replaceChildren(blank,...(c.samples||[]).map(name=>{const o=document.createElement('option');o.value=o.textContent=name;return o}));
   renderPromptPreview();renderCatalog();
   if(typeof Workbench!=='undefined')Workbench.init(createWorkbenchBridge());
+  if(typeof SettingsPanel!=='undefined')SettingsPanel.init({token:c.token,afterSave:async()=>{
+    const response=await fetch('/config');if(!response.ok)throw new Error('刷新设置失败');
+    const latest=await response.json(),previous=$('model').value;
+    config.models=latest.models;config.configured=latest.configured;
+    $('model').replaceChildren(...Object.keys(config.models||{}).map(name=>{const option=document.createElement('option');option.value=option.textContent=name;return option}));
+    if(config.models?.[previous])$('model').value=previous;
+    ready();
+  }});
   ready();
 }).catch(()=>{$('configState').textContent='请在项目根目录运行 python demo/app.py，再访问本地地址。'});
 $('model').onchange=$('mode').onchange=$('fps').onchange=ready;
@@ -121,18 +129,30 @@ function videoRequestParams(){
   else{params.name=$('file').files[0].name;body=$('file').files[0]}
   return {params,body};
 }
-function renderReviewedEvents(events){
+function renderReviewedEvents(events,readOnly=false){
   $('events').replaceChildren();reviewChecks=[];
   for(const e of events){
     const row=document.createElement('div');row.className='event';
-    const box=document.createElement('input');box.type='checkbox';box.checked=true;box.value=e.observation_id;box.onchange=ready;reviewChecks.push(box);
+    const box=document.createElement('input');box.type='checkbox';box.checked=!readOnly;box.disabled=readOnly;box.value=e.observation_id;box.onchange=ready;if(!readOnly)reviewChecks.push(box);
     const seek=document.createElement('button');seek.type='button';seek.textContent=`${e.observation_s.toFixed(2)} 秒 · ${e.description}`;
     seek.onclick=()=>{$('video').currentTime=e.observation_s;$('video').pause()};
     const detail=document.createElement('span');detail.textContent=`区间 ${e.start_s.toFixed(2)}–${e.end_s.toFixed(2)} 秒；画面依据：${e.evidence}；不确定：${e.uncertainty}`;
     row.append(box,seek,detail);$('events').append(row);
   }
-  $('reviewHint').textContent=events.length?'请逐条回看；取消勾选失实事件后，再运行第二步。':'第一步未记录事件；不能运行第二步。';
+  $('reviewHint').textContent=readOnly?'以下仅为已完成片段，可点击回看；全片未完成，不能进入第二步。':events.length?'请逐条回看；取消勾选失实事件后，再运行第二步。':'第一步未记录事件；不能运行第二步。';
   ready();
+}
+function renderEventDiagnostics(result){
+  const coverage=result.segment_coverage;
+  if(coverage){
+    const note=document.createElement('aside');note.className='validation-warnings';
+    const title=document.createElement('strong');title.textContent=coverage.complete?'分段识别已完成':'分段识别未完成（不是全片成功）';note.append(title);
+    for(const range of coverage.ranges||[]){const line=document.createElement('p');line.textContent=`${range.start_s.toFixed(2)}–${range.end_s.toFixed(2)} 秒：${{success:'已完成',failed:'失败',unprocessed:'尚未处理'}[range.status]||range.status}`;note.append(line)}
+    for(const part of result.segments||[]){if(part.status==='success'||part.recovered_by_split)continue;
+      const line=document.createElement('p');line.textContent=`${part.core_start_s.toFixed(2)}–${part.core_end_s.toFixed(2)} 秒失败：${part.error||'未知原因'}${part.api_error_detail?'；'+part.api_error_detail:''}`;note.append(line)}
+    $('events').prepend(note);
+  }
+  for(const warning of result.validation_warnings||[]){const li=document.createElement('li');li.textContent='兼容处理警告：'+warning.message;$('limitations').append(li)}
 }
 function renderStagePoints(points,duration,warnings=[]){
   $('points').replaceChildren();pointControls=[];
@@ -227,11 +247,21 @@ $('recognize').onclick=async()=>{
     params.version=$('eventPrompt').value;params.model=$('model').value;params.mode=$('mode').value;params.fps=$('fps').value;
     const response=await fetch('/events?'+new URLSearchParams(params),{method:'POST',headers:{'X-Local-Token':config.token},body});
     const result=await response.json();mediaFailure=!!result.media_error;record=result;$('raw').textContent=JSON.stringify(result,null,2);$('download').disabled=!result.record_file;
+    if(result.status!=='success'&&result.partial_analysis){
+      $('summary').textContent='仅已完成片段：'+result.partial_analysis.summary;
+      renderReviewedEvents(result.partial_analysis.events,true);renderEventDiagnostics(result);
+      for(const item of result.partial_analysis.limitations||[]){const li=document.createElement('li');li.textContent=item;$('limitations').append(li)}
+      $('metrics').textContent=`第一步未完成 · ${result.model} · ${result.total_s}s · ${result.record_file||''}`;
+      $('status').textContent=result.error||'部分片段失败；已保留已完成结果和实际用量。';
+      return;
+    }
+    if(result.status!=='success')renderEventDiagnostics(result);
     if(!response.ok||result.status!=='success')throw Error(result.error||'事件识别失败');
     eventRecord=result;$('summary').textContent=result.analysis.summary;
     const segmentInfo=result.segments?` · 成功片段 ${result.segments.filter(item=>item.status==='success').length} / 处理 ${result.segments.length} 次`:'';
     $('metrics').textContent=`第一步 ${result.model} · ${result.mode} · ${result.fps} fps · ${result.video_name} · ${result.prompt_file}${segmentInfo} · ${result.total_s}s · ${result.record_file}`;
     renderReviewedEvents(result.analysis.events);
+    renderEventDiagnostics(result);
     for(const item of result.analysis.limitations){const li=document.createElement('li');li.textContent=item;$('limitations').append(li)}
     $('status').textContent=`事件已保存${segmentInfo}。请回看并审核，再点击第二步。`;
   }catch(error){$('summary').textContent=mediaFailure?'视频预处理失败，分析未完成。':'第一步未获得通过校验的事件。';$('status').textContent=error.message}
@@ -347,6 +377,7 @@ function createWorkbenchBridge(){
       }
       eventRecord=records.events||null;opportunityRecord=records.opportunities||null;gameplayRecord=records.gameplay||null;
       if(eventRecord){renderReviewedEvents(eventRecord.analysis.events);$('summary').textContent=eventRecord.analysis.summary;
+        renderEventDiagnostics(eventRecord);
         for(const c of reviewChecks){const stored=session.reviews?.find(r=>r.id===c.value);if(stored)c.checked=stored.checked;}}
       if(opportunityRecord){renderStagePoints(opportunityRecord.analysis.interaction_points,opportunityRecord.metadata?.duration_s,opportunityRecord.analysis.warnings||[]);
         for(const c of pointControls){const stored=session.controls?.find(r=>r.point_id===c.pointId);if(stored){c.include.checked=stored.checked;c.time.value=stored.time_s;}}}

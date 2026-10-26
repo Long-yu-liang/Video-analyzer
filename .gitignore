@@ -12,6 +12,7 @@ venv/
 
 # 本机可编辑项目与修订快照（原始推理记录仍在 results/）
 /projects/
+/config/
 
 # 系统与编辑器
 Thumbs.db
@@ -28,4 +29,4 @@ Desktop.ini
 
 # 样例视频与抽帧图片（推理 JSON 仍保留在 results/）
 /mp4-example/
-/results/qwen3-vl-plus/frames/
+/results/

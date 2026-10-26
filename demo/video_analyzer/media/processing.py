@@ -5,6 +5,7 @@ import math
 from pathlib import Path
 import re
 import subprocess
+from .. import settings
 
 
 class MediaProcessingError(ValueError):
@@ -35,6 +36,7 @@ def _operation(args):
 def run(args):
     operation = _operation(args)
     tool = Path(str(args[0])).name
+    args = [settings.tool(tool), *args[1:]]
     try:
         return subprocess.run(args, check=True, capture_output=True, timeout=90).stdout
     except FileNotFoundError as error:
@@ -78,7 +80,7 @@ def probe(path, runner=None):
 def extract(path, directory, duration, fps):
     # fps filter resets its output timebase; use actual source PTS via showinfo after selection.
     vf = f"select='isnan(prev_selected_t)+gte(t-prev_selected_t,{1/fps:.9f})',scale=768:768:force_original_aspect_ratio=decrease,showinfo"
-    command = ['ffmpeg', '-hide_banner', '-i', str(path), '-an', '-vf', vf,
+    command = [settings.tool('ffmpeg'), '-hide_banner', '-i', str(path), '-an', '-vf', vf,
                '-fps_mode', 'vfr', '-frames:v', '120', '-q:v', '4', str(directory / '%03d.jpg')]
     try:
         proc = subprocess.run(command, check=True, capture_output=True, timeout=90)

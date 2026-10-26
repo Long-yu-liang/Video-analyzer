@@ -9,10 +9,14 @@
     const usage = record.usage || {};
     // Segment records are the source of truth; parent sums can turn missing fields into zero.
     if (Array.isArray(record.segments) && record.segments.length) {
-      const parts = record.segments.map(read);
-      const sum = key => parts.every(part => part?.[key] !== null && part?.[key] !== undefined)
+      const requested = record.segments.filter(item => item.preprocessing_status !== 'failed'
+        || item.api_attempts?.length || item.raw_response || item.usage);
+      const parts = requested.map(read);
+      const sum = key => parts.length && parts.every(part => part?.[key] !== null && part?.[key] !== undefined)
         ? parts.reduce((total, part) => total + part[key], 0) : null;
+      const known = key => {const values=parts.map(part=>part?.[key]).filter(v=>count(v)!==null);return values.length?values.reduce((a,b)=>a+b,0):null;};
       return {input: sum('input'), output: sum('output'), total: sum('total'),
+        known:{input:known('input'),output:known('output'),total:known('total')},
         details: [], segments: parts.length, partial: parts.some(part => part?.input === null || part?.output === null || part?.total === null)};
     }
     const inputDetails = usage.prompt_tokens_details || usage.input_tokens_details || {};
@@ -35,6 +39,7 @@
     if (!record) box.append(node('span', '暂无调用记录'));
     else {
       box.append(node('span', `输入 ${format(value.input)} · 输出 ${format(value.output)} · 总计 ${format(value.total)} Token`));
+      if(value.partial&&value.known)box.append(node('small',`已返回用量小计：输入 ${format(value.known.input)} · 输出 ${format(value.known.output)} · 总计 ${format(value.known.total)} Token；缺失请求的用量未知，不计为 0。`));
       box.append(node('small', `${record.model || '模型未记录'} · ${record.status || '状态未记录'}${value.segments ? ` · ${value.segments} 个片段请求${value.partial ? '（用量未完整返回）' : ''}` : ''}`));
       if (value.details.length) box.append(node('small', value.details.map(([name, tokens]) => `${name} ${format(tokens)}`).join(' · ') + '（明细不额外累加）'));
       if (record.model_call_made === false) box.append(node('small', '此记录未调用模型；不代表一次新消耗。'));

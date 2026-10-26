@@ -9,9 +9,17 @@ from .assets import STATIC_ASSETS
 from ..gameplay import generation
 from ..gameplay import library
 from ..projects import game_management as management
+from .. import settings
 
 
 class Handler(BaseHTTPRequestHandler):
+    def configured(self):
+        try:
+            values = settings.Store(services.ROOT).read()['values']
+            return {'beeroute': bool(values['BEEROUTE_API_KEY']), 'minimax': bool(values['MINIMAX_API_KEY'])}
+        except (ValueError, OSError):
+            return {'beeroute': False, 'minimax': False}
+
     def log_message(self, *args):
         pass
 
@@ -46,6 +54,16 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get('Host') not in (f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'):
             return self.respond(403, {'error': '非法 Host'})
         parsed = urlparse(self.path)
+        if parsed.path in ('/settings', '/settings/export'):
+            if self.headers.get('X-Local-Token') != services.TOKEN:
+                return self.respond(403, {'error': '请从本地首页打开设置。'})
+            try:
+                store = settings.Store(services.ROOT)
+                data = (store.export(parse_qs(parsed.query).get('include_secrets') == ['1'])
+                        if parsed.path.endswith('/export') else store.public())
+                return self.respond(200, data)
+            except (ValueError, OSError):
+                return self.respond(400, {'error': '配置读取失败，请检查 config/settings.json，原文件未被覆盖。'})
         if parsed.path in ('/game-generation', '/game-selection', '/project-games', '/game-bundle', '/game-trash', '/game-sequence'):
             if self.headers.get('X-Local-Token') != services.TOKEN:
                 return self.respond(403, {'error': '请从本地首页读取游戏。'})
@@ -87,7 +105,8 @@ class Handler(BaseHTTPRequestHandler):
                             'metadata', 'model', 'mode', 'fps', 'prompt_file', 'total_s', 'analysis',
                             'catalog_snapshot', 'template_snapshot', 'observations', 'parent_record_id',
                             'request_warnings', 'record_kind', 'model_call_made', 'source_record_id', 'source_record_file',
-                            'validation_status', 'validation_warnings', 'validation_error', 'media_error', 'error', 'usage')
+                            'validation_status', 'validation_warnings', 'validation_error', 'media_error', 'error', 'usage',
+                            'partial_analysis', 'segment_coverage', 'usage_reported_subtotal', 'usage_incomplete')
                     result = {k: source[k] for k in keys if k in source}
                     if isinstance(source.get('segments'), list):
                         result['segments'] = [{k: item[k] for k in ('record_id', 'status', 'usage', 'clip_start_s', 'clip_end_s')
@@ -144,7 +163,7 @@ class Handler(BaseHTTPRequestHandler):
                 games = None
             return self.respond(200, {
                 'token': services.TOKEN,
-                'models': services.MODELS,
+                'models': services.runtime_models(),
                 'samples': services.list_samples(),
                 'prompt_file': prompt_file,
                 'prompt_files': prompt_files,
@@ -152,7 +171,7 @@ class Handler(BaseHTTPRequestHandler):
                 'stage_prompts': services.stage_prompt_catalog(),
                 'games': games,
                 'game_templates': services.gameplay_design.templates(),
-                'configured': {'beeroute': bool(os.environ.get('BEEROUTE_API_KEY'))}})
+                'configured': self.configured()})
         if parsed.path == '/sample':
             try:
                 name = unquote(parse_qs(parsed.query).get('name', [''])[0])
@@ -162,9 +181,28 @@ class Handler(BaseHTTPRequestHandler):
         return self.respond(404, {'error': 'Not found'})
 
     def do_POST(self):
+        if self.headers.get('Host') not in (f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'):
+            return self.respond(403, {'error': '非法 Host'})
         if self.headers.get('X-Local-Token') != services.TOKEN:
             return self.respond(403, {'error': '请从本地首页发起请求。'})
         parsed = urlparse(self.path)
+        if parsed.path in ('/settings', '/settings/check-tools'):
+            try:
+                n = int(self.headers.get('Content-Length', '0'))
+                if not 0 < n <= 128000:
+                    raise ValueError('设置请求大小无效。')
+                payload = json.loads(self.rfile.read(n))
+                if not isinstance(payload, dict):
+                    raise ValueError('设置请求应为对象。')
+                if parsed.path.endswith('/check-tools'):
+                    return self.respond(200, settings.check_tools(services.ROOT))
+                return self.respond(200, settings.Store(services.ROOT).save(payload))
+            except settings.SettingsConflict as error:
+                return self.respond(409, {'error': str(error)})
+            except (ValueError, TypeError):
+                return self.respond(400, {'error': '设置格式无效，请检查字段、HTTPS 地址及模型名称。'})
+            except OSError:
+                return self.respond(500, {'error': '设置保存失败，请检查 config 目录权限；旧配置未被替换。'})
         if parsed.path in ('/game-generation', '/game-repair', '/game-playtest', '/game-selection', '/game-delete', '/game-restore', '/arrangement', '/game-session'):
             try:
                 n = int(self.headers.get('Content-Length', '0'))

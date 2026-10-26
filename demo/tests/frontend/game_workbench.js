@@ -89,7 +89,8 @@ vm.runInContext(source.replace('root.GameWorkbench={',`root.versionTest={
 };root.GameWorkbench={`),detailsContext);
 detailsContext.versionTest.setup();previousFocus.focused=false;
 const versionRecord={...record,status:'checked',project_id:'test-project',record_id:'version-1',
-  output:{...record.output,design:{goal:'测试目标'}}};
+  output:{...record.output,design:{goal:'测试目标',input:'点击目标',rules:'8秒内点中成功',context:'新增游戏设计',screen:'显示候选标记',feedback:'显示结果',states:'结束后继续视频',timeout_s:8}}};
+const originalDesign=JSON.stringify(versionRecord.output.design);
 const versionContext={project:{project_id:'test-project'},point:{id:'p1',design:{title:'本地版本'}}};
 detailsContext.versionTest.open(versionRecord,versionContext);
 let versionModal=detailsContext.versionTest.get();
@@ -97,6 +98,15 @@ versionModal.note.value='未提交的修复要求';versionModal.note.oninput();v
 assert.equal(versionModal.dialog.open,true);assert.equal(detailsContext.versionTest.inlineCount(),0);
 assert.equal(versionModal.body.children.length,1);
 assert.ok(versionModal.body.children[0].children.some(n=>n.textContent==='单点立即试玩（大屏）'));
+const walk=n=>[n,...n.children.flatMap(walk)];
+const designView=walk(versionModal.body).find(n=>n.className==='gw-design');
+assert.ok(designView,'design has a readable presentation instead of a bare JSON pre');
+const labels=walk(designView).map(n=>n.textContent).filter(Boolean).join(' ');
+for(const label of ['玩家目标','如何操作','判定与结束规则','视频情境与设计边界','画面呈现','成功、失败与超时反馈','进入、结束与视频衔接','交互时限 8 秒'])assert.ok(labels.includes(label),label);
+assert.equal(JSON.stringify(versionRecord.output.design),originalDesign,'rendering never rewrites model output');
+const technical=walk(versionModal.body).find(n=>n.className==='gw-version-technical');
+assert.ok(technical&&!technical.open,'raw design/code/paths remain collapsed by default');
+assert.ok(walk(technical).some(n=>n.textContent==='查看原始设计 JSON'));
 detailsContext.versionTest.open({...versionRecord,record_id:'version-2'},versionContext);
 assert.equal(detailsContext.versionTest.get().dialog,versionModal.dialog,'reuse modal instead of stacking');
 assert.equal(versionModal.body.children.length,1,'replace old detail content');

@@ -129,6 +129,77 @@ class MediaPreprocessingChecks(unittest.TestCase):
         self.assertEqual(app.model_request_count(result), 0)
         model.assert_not_called()
 
+    def test_segment_transcode_falls_back_after_libx264_abort(self):
+        def fake(args):
+            if args[args.index('-c:v') + 1] == 'libx264':
+                raise media.MediaProcessingError('transcode', exit_code=8987)
+            self.assertEqual(args[args.index('-c:v') + 1], 'h264_mf')
+            self.assertIn('2M', args)
+            Path(args[-1]).write_bytes(b'fallback-h264')
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / 'clip.mp4'
+            output.write_bytes(b'truncated')
+            result = media.clip_video(Path('in.mp4'), output, 0, 20, runner=fake)
+            self.assertEqual(result.read_bytes(), b'fallback-h264')
+
+    def test_nonzero_ffmpeg_exit_keeps_a_decodable_segment(self):
+        def fake(args):
+            data = b'bad' if 'libx264' in args else b'good-segment'
+            Path(args[-1]).write_bytes(data)
+            raise media.MediaProcessingError('transcode', exit_code=8987)
+        def prober(path):
+            if path.read_bytes() != b'good-segment':
+                raise media.MediaProcessingError('probe', exit_code=1)
+            return {'video_codec': 'h264', 'has_audio': False, 'duration_s': 20.0}
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / 'clip.mp4'
+            result = media.clip_video(Path('in.mp4'), output, 0, 20, runner=fake, prober=prober)
+            self.assertEqual(result.read_bytes(), b'good-segment')
+
+    def test_segment_transcode_keeps_libx264_error_when_fallback_fails(self):
+        def fake(args):
+            if 'libx264' in args:
+                raise media.MediaProcessingError('transcode', exit_code=8987)
+            raise media.MediaProcessingError('transcode', exit_code=1, stderr=b'fallback failed')
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / 'clip.mp4'
+            with self.assertRaises(media.MediaProcessingError) as caught:
+                media.clip_video(Path('in.mp4'), output, 0, 20, runner=fake)
+        self.assertEqual(caught.exception.detail['exit_code'], 8987)
+        self.assertNotIn('fallback failed', str(caught.exception))
+
+    def test_missing_ffmpeg_does_not_try_another_encoder(self):
+        calls = []
+        def fake(args):
+            calls.append(args)
+            raise media.MediaProcessingError('transcode', code='missing_tool',
+                                              message='请安装 FFmpeg，并将 ffmpeg / ffprobe 加入 PATH。')
+        with tempfile.TemporaryDirectory() as folder, self.assertRaises(media.MediaProcessingError):
+            media.clip_video(Path('in.mp4'), Path(folder) / 'clip.mp4', 0, 20, runner=fake)
+        self.assertEqual(len(calls), 1)
+
+    def test_oversized_libx264_segment_is_rejected_without_fallback(self):
+        def fake(args):
+            self.assertEqual(args[args.index('-c:v') + 1], 'libx264')
+            Path(args[-1]).write_bytes(b'x' * (12 * 1024 * 1024 + 1))
+        with tempfile.TemporaryDirectory() as folder, self.assertRaisesRegex(ValueError, '12 MiB'):
+            media.clip_video(Path('in.mp4'), Path(folder) / 'clip.mp4', 0, 20, runner=fake)
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg not installed')
+    def test_s07_segments_remain_decodable_h264_within_upload_limit(self):
+        source = app.ROOT / 'mp4-example' / 'S07_篮球比赛_前58秒.mp4'
+        if not source.exists():
+            self.skipTest('S07 sample not available')
+        with tempfile.TemporaryDirectory() as folder:
+            for index, (_, _, start, end) in enumerate(media.segment_windows(58)):
+                output = Path(folder) / f'{index}.mp4'
+                media.clip_video(source, output, start, end)
+                info = media.probe(output)
+                self.assertEqual(info['video_codec'], 'h264', output)
+                self.assertFalse(info['has_audio'])
+                self.assertAlmostEqual(info['duration_s'], end - start, delta=0.15)
+                self.assertLessEqual(output.stat().st_size, 12 * 1024 * 1024)
+
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg not installed')
     def test_real_s06_reaches_mock_model_three_times_without_transcoding(self):
         source = app.ROOT/'mp4-example/S06_有声乒乓球.mp4'

@@ -2,6 +2,8 @@
 JS = 'text/javascript; charset=utf-8'
 CSS = 'text/css; charset=utf-8'
 STATIC_ASSETS = {
+    '/assets/js/settings-panel.js': ('assets/js/settings-panel.js', JS),
+    '/assets/css/settings-panel.css': ('assets/css/settings-panel.css', CSS),
     '/assets/js/token-usage.js': ('assets/js/token-usage.js', JS),
     '/assets/js/game-workbench.js': ('assets/js/game-workbench.js', JS),
     '/assets/css/game-workbench.css': ('assets/css/game-workbench.css', CSS),

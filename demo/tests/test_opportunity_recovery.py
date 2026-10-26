@@ -9,7 +9,10 @@ import app
 from output_contract import ContractError
 
 
-class OpportunityRecoveryChecks(unittest.TestCase):
+from test_support import MockModelTestCase
+
+
+class OpportunityRecoveryChecks(MockModelTestCase):
     def setUp(self):
         self.observations=[{'observation_id':f'e{i}','frame_time_s':t} for i,t in ((2,4),(3,6),(6,12),(7,14.5))]
 

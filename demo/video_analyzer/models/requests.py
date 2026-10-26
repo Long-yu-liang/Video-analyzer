@@ -1,6 +1,7 @@
 """Model-specific payload construction and modality usage parsing."""
 import os
 import re
+from .. import settings
 
 
 def supports_video_audio(model):
@@ -31,7 +32,7 @@ def build_request(model, mode, fps, data, frames, metadata, prompt, models, supp
                             {'type': 'image_url', 'image_url': {'url': 'data:image/jpeg;base64,' + frame['data']}}]
         body = {'model': model, 'messages': [{'role': 'user', 'content': content}],
                 'response_format': {'type': 'json_object'}, 'max_tokens': 4096, 'enable_thinking': False}
-        base = os.environ.get('DASHSCOPE_BASE_URL', 'https://dashscope.aliyuncs.com/compatible-mode/v1').rstrip('/')
+        base = settings.get('DASHSCOPE_BASE_URL', 'https://dashscope.aliyuncs.com/compatible-mode/v1').rstrip('/')
         if not base.startswith('https://'):
             raise ValueError('模型 API 地址必须使用 HTTPS。')
         return base + '/chat/completions', body, audio
@@ -52,7 +53,7 @@ def build_request(model, mode, fps, data, frames, metadata, prompt, models, supp
         if model.startswith('qwen'):
             body['enable_thinking'] = False
             body['response_format'] = {'type': 'json_object'}
-        base = os.environ.get('BEEROUTE_BASE_URL', 'https://beeroute.ai/v1').rstrip('/')
+        base = settings.get('BEEROUTE_BASE_URL', 'https://beeroute.ai/v1').rstrip('/')
         if not base.startswith('https://'):
             raise ValueError('模型 API 地址必须使用 HTTPS。')
         return base + '/chat/completions', body, audio

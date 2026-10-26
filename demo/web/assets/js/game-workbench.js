@@ -266,15 +266,46 @@
       if(current().project?.project_id===now.project.project_id){status.textContent='生成已完成，原始记录已自动保存';display(record,context);refreshLibrary();}
     }finally{busy=false;document.querySelectorAll('[data-game-generate]').forEach(b=>b.disabled=false);}
   }
+  function renderGameDesign(record) {
+    const design=record.output?.design;
+    if(!design||typeof design!=='object')return element('p','此版本暂无完整玩法说明。');
+    const section=element('div');section.className='gw-design';
+    section.append(element('h3','玩法说明'));
+    const tags=element('p');tags.className='gw-design-meta';
+    tags.append(element('span',record.input?.design?.title||'小游戏'));
+    if(Number.isFinite(record.input?.time_s))tags.append(element('span',`视频位置 ${record.input.time_s.toFixed(2)} 秒`));
+    if(Number.isFinite(design.timeout_s))tags.append(element('span',`交互时限 ${design.timeout_s} 秒`));
+    section.append(tags);
+    const card=(key,label)=>{
+      const item=element('article');item.className='gw-design-card';
+      item.append(element('h4',label),element('p',typeof design[key]==='string'&&design[key].trim()?design[key]:'该版本未提供'));
+      return item;
+    };
+    const main=element('div');main.className='gw-design-grid';
+    for(const [key,label] of [['goal','玩家目标'],['input','如何操作'],['rules','判定与结束规则']])main.append(card(key,label));
+    section.append(main);
+    const extra=element('details');extra.className='gw-design-more';
+    extra.append(element('summary','场景、画面与反馈说明'));
+    const grid=element('div');grid.className='gw-design-grid';
+    for(const [key,label] of [['context','视频情境与设计边界'],['screen','画面呈现'],['feedback','成功、失败与超时反馈'],['states','进入、结束与视频衔接']])grid.append(card(key,label));
+    extra.append(grid);section.append(extra);
+    return section;
+  }
   function display(record,context) {
     selectedRecord=record;
     const box=element('section');versionHost(record,context).append(box);
     box.append(element('h3',record.status==='checked'?'结构与语法检查通过（尚不代表可玩）':'生成或检查失败'),element('p',record.error||`记录 ${record.record_id} · 模型 ${record.model}`));
     root.TokenUsage?.render(box,record,'本次游戏生成／修复用量');
-    if(record.record_file)box.append(element('p','保存位置：'+record.record_file));
-    if(record.artifacts&&Object.keys(record.artifacts).length)box.append(element('pre','独立产物（未检查通过不代表可运行）：\n'+Object.values(record.artifacts).join('\n')));
-    if(record.output){box.append(element('pre',JSON.stringify(record.output.design,null,2)));
-      const detail=element('details');detail.append(element('summary','查看 JS / CSS'),element('pre',record.output.javascript+'\n\n'+record.output.css));box.append(detail);}
+    if(record.output)box.append(renderGameDesign(record));
+    const technical=element('details');technical.className='gw-version-technical';
+    technical.append(element('summary','原始设计、代码与保存位置'));
+    if(record.record_file)technical.append(element('p','保存位置：'+record.record_file));
+    if(record.artifacts&&Object.keys(record.artifacts).length)technical.append(element('pre','代码与设计产物：\n'+Object.values(record.artifacts).join('\n')));
+    if(record.output){
+      const raw=element('details');raw.append(element('summary','查看原始设计 JSON'),element('pre',JSON.stringify(record.output.design,null,2)));technical.append(raw);
+      const detail=element('details');detail.append(element('summary','查看 JS / CSS'),element('pre',record.output.javascript+'\n\n'+record.output.css));technical.append(detail);
+    }
+    box.append(technical);
     if(record.status==='checked') {
       box.append(button('单点立即试玩（大屏）',()=>play(record)),button('小窗预览',()=>play(record,false)),button('启用此版本用于串联',async()=>{
         await selectVersion(record.point_id,record.record_id,true);box.append(element('p','采用版本已自动保存，重新打开项目后可恢复'));

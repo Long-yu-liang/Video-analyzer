@@ -18,7 +18,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import app
 
 
-class PipelineChecks(unittest.TestCase):
+from test_support import MockModelTestCase
+
+
+class PipelineChecks(MockModelTestCase):
     def result(self, **update):
         event = dict(start_s=1, end_s=2, description='test', evidence='frame 1', source='visual', uncertainty='between frames')
         event.update(update)

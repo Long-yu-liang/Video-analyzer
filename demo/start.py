@@ -1,4 +1,4 @@
-"""Launch the demo. The API key and the single model name come from the project .env."""
+"""Launch the demo. Configure model services in the page's Settings dialog."""
 import runpy
 from pathlib import Path
 

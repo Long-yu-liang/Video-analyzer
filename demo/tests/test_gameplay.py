@@ -18,7 +18,10 @@ def completion(answer):
     return io.BytesIO(json.dumps(payload).encode())
 
 
-class GameplayChecks(unittest.TestCase):
+from test_support import MockModelTestCase
+
+
+class GameplayChecks(MockModelTestCase):
     def setUp(self):
         self.raw = b'fixture'
         self.opportunity = {

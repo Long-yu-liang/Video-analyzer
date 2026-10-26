@@ -15,6 +15,7 @@ function element(id = '') {
     pause() { this.paused = true; },
     replaceChildren(...children) { this.children = children; this._text = ''; },
     append(...children) { this.children.push(...children); },
+    prepend(...children) { this.children.unshift(...children); },
     click() { if (this.onclick) this.onclick(); },
   };
   Object.defineProperty(node, 'textContent', {
@@ -31,6 +32,7 @@ const nodes = Object.fromEntries(ids.map(id => [id, element(id)]));
 
 let requestedURL, briefBody;
 let failMedia = false;
+let partialFailure = false;
 let gameplayRecommendations = [{ point_id: 'p1', observation_id: 'e1', event_id: 'e1', time_s: 1.5,
   opportunity: '决定是否投篮', reason: '球已经在手中', game_id: 'choice', game_name: '剧情选择',
   fit: '持球且有可见分支', player_goal: '作出选择', player_action: '在动作里选一个',
@@ -70,6 +72,10 @@ const fetch = async (url, options = {}) => {
   }) };
   if (url.startsWith('/events?')) {
     requestedURL = url;
+    if(partialFailure)return {ok:true,json:async()=>({status:'failed',stage:'events',model:'fixture',record_file:'partial.json',
+      error:'events[0].observation_s 超出片长',segments:[{core_start_s:20,core_end_s:40,status:'failed',error:'核心时间错误'}],
+      segment_coverage:{complete:false,ranges:[{start_s:0,end_s:20,status:'success'},{start_s:20,end_s:40,status:'failed'},{start_s:40,end_s:58,status:'unprocessed'}]},
+      partial_analysis:{summary:'仅前20秒',limitations:['全片未完成'],events:[{observation_id:'e1',start_s:1,end_s:2,observation_s:1.5,description:'持球',evidence:'球在手中',uncertainty:'无'}]}})};
     if (failMedia) return {ok:false,json:async()=>({status:'failed',stage:'events',
       error:'视频分段/重新编码失败（ffmpeg，退出码 8987）',media_error:{operation:'transcode',exit_code:8987}})};
     return { ok: true, json: async () => ({ status: 'success', record_id: 'a'.repeat(32),
@@ -208,5 +214,16 @@ vm.runInNewContext(usageScript + '\n' + script, {
   assert.equal(nodes.summary.textContent,'视频预处理失败，分析未完成。');
   assert.match(nodes.status.textContent,/8987/);
   assert.equal(nodes.suggest.disabled,true);
+  failMedia=false;partialFailure=true;
+  await nodes.recognize.onclick();
+  assert.match(nodes.summary.textContent,/仅已完成片段/);
+  assert.equal(nodes.suggest.disabled,true,'partial results cannot be sent to step two');
+  assert.match(nodes.reviewHint.textContent,/全片未完成/);
+  const partialEvent=nodes.events.children.find(child=>child.className==='event');
+  assert.equal(partialEvent.children[0].disabled,true);
+  partialEvent.children[1].click();assert.equal(nodes.video.currentTime,1.5,'partial events remain seekable');
+  const diagnostic=nodes.events.children.find(child=>child.className==='validation-warnings');
+  assert.ok(diagnostic.children.some(child=>child.textContent.includes('尚未处理')));
+  assert.match(nodes.status.textContent,/超出片长/);
   console.log('UI point seek and empty state OK');
 })().catch(error => { console.error(error); process.exitCode = 1; });

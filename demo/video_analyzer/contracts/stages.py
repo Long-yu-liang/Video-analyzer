@@ -8,9 +8,18 @@ def validate_stage_events(text, duration):
     result = parse_json(text)
     if not isinstance(result, dict):
         raise expected('$', '对象', result)
-    for key, kind, label in (('summary', str, '字符串'), ('events', list, '数组'), ('limitations', list, '数组')):
+    result.pop('validation_warnings', None)  # This metadata is produced by the validator only.
+    for key, kind, label in (('summary', str, '字符串'), ('events', list, '数组')):
         if not isinstance(result.get(key), kind):
             raise expected(key, label, result.get(key, MISSING))
+    # Normalize auxiliary data only; never change the saved raw model response.
+    if 'limitations' not in result:
+        result['limitations'] = []
+        result['validation_warnings'] = [{
+            'path': 'limitations', 'code': 'missing_auxiliary_field', 'action': 'default_empty_array',
+            'message': '模型未返回 limitations；本地兼容为空数组，原始响应未修改。'}]
+    elif not isinstance(result['limitations'], list):
+        raise expected('limitations', '数组', result['limitations'])
     for index, item in enumerate(result['limitations']):
         if not isinstance(item, str):
             raise expected(f'limitations[{index}]', '字符串', item)

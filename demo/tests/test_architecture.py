@@ -23,7 +23,17 @@ from video_analyzer.paths import DEMO, ROOT
 from video_analyzer.web.assets import STATIC_ASSETS
 
 
-class ArchitectureChecks(unittest.TestCase):
+from test_support import MockModelTestCase
+
+
+class ArchitectureChecks(MockModelTestCase):
+    def test_settings_panel_without_inference(self):
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Node.js not available')
+        result = subprocess.run([node, str(DEMO/'tests/frontend/settings_panel.js')], capture_output=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
+
     def test_token_usage_display_without_inference(self):
         node = shutil.which('node')
         if not node:
@@ -102,6 +112,7 @@ class ArchitectureChecks(unittest.TestCase):
         scripts=re.findall(r'<script src="([^"]+)"',page)
         self.assertEqual(scripts,[
             '/assets/js/token-usage.js',
+            '/assets/js/settings-panel.js',
             '/assets/js/gameplay/legacy-design.js','/assets/js/gameplay/recommendations.js',
             '/assets/js/game-workbench.js','/assets/js/workbench.js','/assets/js/app.js'])
         self.assertNotIn('<script>',page)

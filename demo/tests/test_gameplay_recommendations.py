@@ -14,7 +14,10 @@ import gameplay_recommendations as recommendations
 import test_gameplay as fixture_module
 
 
-class RecommendationChecks(unittest.TestCase):
+from test_support import MockModelTestCase
+
+
+class RecommendationChecks(MockModelTestCase):
     def setUp(self):
         self.catalog = app.load_game_catalog()
         self.point = {'point_id': 'p1', 'observation_id': 'e1', 'time_s': 2,

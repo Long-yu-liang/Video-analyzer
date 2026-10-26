@@ -18,7 +18,10 @@ def completion(answer, finish='stop'):
                                   'usage': {'prompt_tokens_details': {'video_tokens': 100, 'text_tokens': 20}}}).encode())
 
 
-class TwoStageChecks(unittest.TestCase):
+from test_support import MockModelTestCase
+
+
+class TwoStageChecks(MockModelTestCase):
     def event(self, **changes):
         item = {'start_s': 1, 'end_s': 2, 'observation_s': 1.5,
                 'description': '人物取得球', 'evidence': '球在手中', 'uncertainty': '无'}
@@ -219,7 +222,7 @@ class TwoStageChecks(unittest.TestCase):
             result = app.analyze_events(b'fixture', 'short.mp4', 'v14')
         self.assertEqual(result['status'], 'success')
         self.assertEqual([part['status'] for part in result['segments']], ['failed', 'success', 'success'])
-        self.assertEqual(result['usage']['prompt_tokens'], 0)
+        self.assertNotIn('prompt_tokens', result['usage'], 'Missing reported usage is not zero')
         self.assertEqual(result['video_tokens'], 300)
         self.assertEqual([event['observation_s'] for event in result['analysis']['events']], [0.5, 10.5])
         parent = {'video_sha256': app.hashlib.sha256(b'correct').hexdigest()}

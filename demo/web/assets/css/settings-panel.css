@@ -1,0 +1,14 @@
+.app-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 24px}
+.app-toolbar h1{font-size:24px;margin:4px 0}.app-toolbar p{margin:0}
+.settings-dialog{width:min(760px,calc(100vw - 32px));max-height:90vh;padding:0;border:1px solid #ccd4ca;border-radius:14px;color:inherit;background:#fff;box-sizing:border-box}
+.settings-dialog::backdrop{background:rgba(15,30,25,.45)}
+.settings-layout{display:flex;flex-direction:column;max-height:88vh;min-height:0}
+.settings-header,.settings-footer{padding:16px 22px;flex-shrink:0;background:#f6f7f2}
+.settings-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.settings-header h2{margin:0;font-size:21px}
+.settings-scroll{overflow:auto;padding:18px 22px;min-height:0}.settings-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+.settings-tabs [aria-pressed="true"]{background:#203b31;color:white}
+.settings-dialog label{display:block;margin:12px 0}.settings-dialog input:not([type=checkbox]),.settings-dialog textarea{display:block;width:100%;box-sizing:border-box;margin-top:7px;min-width:0}.settings-dialog textarea{min-height:100px}
+.settings-dialog .settings-check{display:flex;gap:8px;align-items:center}.settings-check input{width:auto;margin:0}
+.settings-footer p{white-space:pre-wrap;font-size:14px;margin:0 0 12px}.settings-footer button{margin-right:8px}
+.settings-dialog [hidden]{display:none!important}
+@media(max-width:600px){.app-toolbar{padding:14px;align-items:flex-start}.app-toolbar h1{font-size:20px}.app-toolbar p{font-size:13px}.settings-header,.settings-footer,.settings-scroll{padding:14px}}

@@ -1,7 +1,18 @@
 <!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>视频交互工作台</title>
 <link rel="stylesheet" href="/assets/css/base.css">
 <link rel="stylesheet" href="/assets/css/workbench.css">
-<header><small>VIDEO ANALYZER</small><h1>视频交互工作台</h1><p>找到参与位置，选择玩法，再生成游戏并串联试玩。</p></header>
+<link rel="stylesheet" href="/assets/css/settings-panel.css">
+<header class="app-toolbar"><div><small>VIDEO ANALYZER</small><h1>视频交互工作台</h1><p>找到参与位置，选择玩法，再生成游戏并串联试玩。</p></div><button id="openSettings" type="button" class="ghost">设置</button></header>
+<dialog id="settingsDialog" class="settings-dialog" aria-labelledby="settingsTitle"><div class="settings-layout">
+  <div class="settings-header"><h2 id="settingsTitle">工作台设置</h2><button id="closeSettings" class="ghost" type="button" aria-label="关闭设置">关闭</button></div>
+  <div class="settings-scroll"><nav id="settingsTabs" class="settings-tabs" aria-label="设置分类"></nav><div id="settingsBody"></div>
+    <details><summary>导入 / 导出配置</summary><p>密钥保存在本机明文配置文件，不会存入浏览器或项目草稿。默认导出不包含密钥。</p>
+      <label>导入配置（先填入草稿，再保存）<input id="settingsImport" type="file" accept="application/json,.json"></label>
+      <label class="settings-check"><input id="settingsExportSecrets" type="checkbox">导出包含明文密钥（谨慎）</label><button id="settingsExport" class="ghost" type="button">导出配置</button>
+    </details>
+  </div>
+  <div class="settings-footer"><p id="settingsStatus" role="status" aria-live="polite">正在读取本机设置…</p><button id="settingsSave" type="button">保存设置</button><button id="settingsReload" class="ghost" type="button">重新读取</button></div>
+</div></dialog>
 <div class="wb-project-bar">
   <div class="wb-project-tools"><label>项目名称<input id="projectName" maxlength="120" aria-label="项目名称"></label>
     <button id="saveProject" type="button">保存项目</button><details class="wb-project-menu"><summary>项目管理</summary><button id="saveProjectCopy" type="button" class="ghost">另存副本</button><button id="newProject" type="button" class="ghost">新建项目</button>
@@ -55,6 +66,7 @@
 </div></div>
 <link rel="stylesheet" href="/assets/css/gameplay.css">
 <script src="/assets/js/token-usage.js"></script>
+<script src="/assets/js/settings-panel.js"></script>
 <script src="/assets/js/gameplay/legacy-design.js"></script>
 <script src="/assets/js/gameplay/recommendations.js"></script>
 <link rel="stylesheet" href="/assets/css/game-workbench.css">

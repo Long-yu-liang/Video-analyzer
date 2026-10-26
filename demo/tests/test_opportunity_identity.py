@@ -5,7 +5,10 @@ from unittest.mock import patch
 import app
 
 
-class OpportunityIdentityChecks(unittest.TestCase):
+from test_support import MockModelTestCase
+
+
+class OpportunityIdentityChecks(MockModelTestCase):
     def run_version(self, version):
         raw=b'fixture'
         events=[{'observation_id':f'e{i}','observation_s':float(i),'end_s':float(i),
