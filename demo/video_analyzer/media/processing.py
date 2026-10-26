@@ -166,12 +166,53 @@ def segment_windows(duration):
     return windows
 
 
-def clip_video(path, output, start_s, end_s, runner=None, max_video=12 * 1024 * 1024):
-    runner = runner or run
-    runner(['ffmpeg', '-v', 'error', '-i', str(path), '-ss', f'{start_s:.6f}',
-         '-t', f'{end_s-start_s:.6f}', '-map', '0:v:0', '-an', '-sn', '-dn',
-         '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
-         '-movflags', '+faststart', str(output)])
-    if output.stat().st_size > max_video:
+def _usable_segment(output, duration_s, max_video, prober):
+    """True when a nonzero FFmpeg exit still left a complete H.264 segment."""
+    if not output.is_file() or output.stat().st_size <= 0:
+        return False
+    try:
+        info = prober(output)
+    except (MediaProcessingError, ValueError, OSError, KeyError):
+        return False
+    duration = info.get('duration_s')
+    usable = info.get('video_codec') == 'h264' and not info.get('has_audio')
+    usable = usable and isinstance(duration, (int, float)) and abs(duration - duration_s) <= 0.15
+    if usable and output.stat().st_size > max_video:
         raise ValueError('分段编码后仍超过 12 MiB，请压缩源视频。')
-    return output
+    return usable
+
+
+def clip_video(path, output, start_s, end_s, runner=None, prober=None, max_video=12 * 1024 * 1024):
+    """Cut one segment. FFmpeg 9 on Windows can exit 8987 after a finished file, or mid-write."""
+    runner = runner or run
+    prober = prober or probe
+    duration_s = end_s - start_s
+    shared = ['ffmpeg', '-y', '-nostdin', '-v', 'error', '-i', str(path), '-ss', f'{start_s:.6f}',
+              '-t', f'{duration_s:.6f}', '-map', '0:v:0', '-an', '-sn', '-dn']
+    ending = ['-pix_fmt', 'yuv420p', '-movflags', '+faststart', str(output)]
+    # libx264 is smaller, but this build often aborts in it. Media Foundation is retried
+    # because the same exit code sometimes belongs to a truncated file and sometimes does not.
+    commands = [
+        [*shared, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', *ending],
+        *[[*shared, '-c:v', 'h264_mf', '-rate_control', 'cbr', '-b:v', '2M', *ending]] * 3,
+    ]
+    failure = None
+    for command in commands:
+        if output.exists():
+            output.unlink()
+        try:
+            runner(command)
+        except MediaProcessingError as error:
+            if error.detail['code'] in ('missing_tool', 'timeout'):
+                raise
+            if _usable_segment(output, duration_s, max_video, prober):
+                return output
+            failure = failure or error
+            continue
+        if output.is_file() and 0 < output.stat().st_size <= max_video:
+            return output
+        if output.is_file() and output.stat().st_size > max_video:
+            raise ValueError('分段编码后仍超过 12 MiB，请压缩源视频。')
+    if failure:
+        raise failure
+    raise MediaProcessingError('transcode', code='invalid_output', message='分段编码未生成有效视频，未调用模型。')
