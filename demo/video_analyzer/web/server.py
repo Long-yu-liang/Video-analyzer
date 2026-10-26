@@ -8,6 +8,7 @@ from .. import application as services
 from .assets import STATIC_ASSETS
 from ..gameplay import generation
 from ..gameplay import library
+from ..gameplay import tasks
 from ..projects import game_management as management
 from .. import settings
 
@@ -64,11 +65,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(200, data)
             except (ValueError, OSError):
                 return self.respond(400, {'error': '配置读取失败，请检查 config/settings.json，原文件未被覆盖。'})
-        if parsed.path in ('/game-generation', '/game-selection', '/project-games', '/game-bundle', '/game-trash', '/game-sequence'):
+        if parsed.path in ('/game-tasks', '/game-generation', '/game-selection', '/project-games', '/game-bundle', '/game-trash', '/game-sequence'):
             if self.headers.get('X-Local-Token') != services.TOKEN:
                 return self.respond(403, {'error': '请从本地首页读取游戏。'})
             try:
                 q = parse_qs(parsed.query)
+                if parsed.path == '/game-tasks':return self.respond(200,tasks.listing(services.ROOT,q.get('project_id',[''])[0]))
                 if parsed.path == '/game-trash':return self.respond(200,management.listing(services.ROOT,q.get('project_id',[''])[0]))
                 if parsed.path == '/game-sequence':return self.respond(200,management.sequence(services.ROOT,q.get('project_id',[''])[0]))
                 if parsed.path == '/project-games':
@@ -106,7 +108,7 @@ class Handler(BaseHTTPRequestHandler):
                             'catalog_snapshot', 'template_snapshot', 'observations', 'parent_record_id',
                             'request_warnings', 'record_kind', 'model_call_made', 'source_record_id', 'source_record_file',
                             'validation_status', 'validation_warnings', 'validation_error', 'media_error', 'error', 'usage',
-                            'partial_analysis', 'segment_coverage', 'usage_reported_subtotal', 'usage_incomplete')
+                            'partial_analysis', 'segment_coverage', 'usage_reported_subtotal', 'usage_incomplete', 'event_validation_summary')
                     result = {k: source[k] for k in keys if k in source}
                     if isinstance(source.get('segments'), list):
                         result['segments'] = [{k: item[k] for k in ('record_id', 'status', 'usage', 'clip_start_s', 'clip_end_s')
@@ -169,6 +171,7 @@ class Handler(BaseHTTPRequestHandler):
                 'prompt_files': prompt_files,
                 'prompt_catalog': prompt_catalog,
                 'stage_prompts': services.stage_prompt_catalog(),
+                'game_generation_prompts': services.prompt_catalog.game_generation_catalog(services.ROOT),
                 'games': games,
                 'game_templates': services.gameplay_design.templates(),
                 'configured': self.configured()})
@@ -203,7 +206,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(400, {'error': '设置格式无效，请检查字段、HTTPS 地址及模型名称。'})
             except OSError:
                 return self.respond(500, {'error': '设置保存失败，请检查 config 目录权限；旧配置未被替换。'})
-        if parsed.path in ('/game-generation', '/game-repair', '/game-playtest', '/game-selection', '/game-delete', '/game-restore', '/arrangement', '/game-session'):
+        if parsed.path in ('/game-tasks', '/game-generation', '/game-repair', '/game-playtest', '/game-selection', '/game-delete', '/game-restore', '/arrangement', '/game-session'):
             try:
                 n = int(self.headers.get('Content-Length', '0'))
                 if not 0 < n <= (128000 if parsed.path=='/arrangement' else 32000):
@@ -211,6 +214,7 @@ class Handler(BaseHTTPRequestHandler):
                 payload = json.loads(self.rfile.read(n).decode('utf-8'))
                 if not isinstance(payload, dict):
                     raise ValueError('游戏请求必须为对象。')
+                if parsed.path == '/game-tasks':return self.respond(202,tasks.start(services.ROOT,payload))
                 if parsed.path == '/game-repair' and not payload.get('generation_id'):
                     raise ValueError('修复必须提供原生成记录 ID。')
                 if parsed.path == '/game-generation' and payload.get('generation_id'):

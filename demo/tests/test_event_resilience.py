@@ -26,6 +26,46 @@ def response(data):
 
 
 class EventResilienceTests(MockModelTestCase):
+    def test_rounding_tolerance_and_raw_preservation(self):
+        data=answer(limitations=[])
+        data['events'][0].update(start_s=10.009,end_s=11.679,observation_s=10.)
+        text=json.dumps(data)
+        result=app.validate_stage_events(text,20)
+        self.assertEqual(result['events'][0]['observation_s'],10.009)
+        warning=result['validation_warnings'][0]
+        self.assertEqual(warning['original_value'],10.)
+        self.assertEqual(warning['corrected_value'],10.009)
+        self.assertEqual(json.loads(text)['events'][0]['observation_s'],10.)
+        for observed,valid in ((0.95,True),(0.949,False),(2.05,True),(2.051,False)):
+            data=answer(limitations=[]);data['events'][0]['observation_s']=observed
+            with self.subTest(observed=observed):
+                if valid:app.validate_stage_events(json.dumps(data),20)
+                else:
+                    with self.assertRaises(ValueError):app.validate_stage_events(json.dumps(data),20)
+
+    def test_reject_one_event_but_keep_others_with_warning(self):
+        data=answer(limitations=[])
+        data['events'] += [{**data['events'][0],'observation_s':9},
+                           {**data['events'][0],'start_s':3,'end_s':2},
+                           {**data['events'][0],'description':''}]
+        result=app.validate_stage_events(json.dumps(data),20)
+        self.assertEqual(result['validation_summary'],{'returned_count':4,'accepted_count':1,'rejected_count':3})
+        self.assertEqual(len(result['validation_warnings']),3)
+        self.assertEqual(result['events'][0]['observation_id'],'e1')
+        self.assertTrue(all(w['action']=='rejected_event' for w in result['validation_warnings']))
+        self.assertEqual(app.validate_stage_events(json.dumps(answer(events=[],limitations=[])),20)['events'],[])
+
+    def test_video_boundary_tolerance_never_expands_to_large_gaps(self):
+        data=answer(limitations=[])
+        data['events'][0].update(start_s=-0.009,observation_s=0,end_s=1)
+        result=app.validate_stage_events(json.dumps(data),20)
+        self.assertEqual(result['events'][0]['start_s'],0.)
+        data['events'][0].update(start_s=19,observation_s=20.009,end_s=20.02)
+        result=app.validate_stage_events(json.dumps(data),20)
+        self.assertEqual(result['events'][0]['observation_s'],20)
+        data['events'][0].update(start_s=0.05,observation_s=-0.04,end_s=1)
+        with self.assertRaises(ValueError):app.validate_stage_events(json.dumps(data),20)
+
     def test_missing_auxiliary_defaults_but_core_stays_strict(self):
         original = json.dumps(answer())
         result = app.validate_stage_events(original, 20)

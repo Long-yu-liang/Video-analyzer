@@ -39,6 +39,25 @@ function renderPromptPreview(){
     $('promptPreview').append(title,body);
   }
 }
+function initGenerationPromptPreview(){
+  const select=$('generationPromptPreviewVersion'),host=$('generationPromptPreview');
+  if(!select||!host)return;
+  const versions=config.game_generation_prompts||[];
+  select.replaceChildren(...versions.map(item=>{const option=document.createElement('option');option.value=item.version;option.textContent=item.version;return option}));
+  const active=versions.find(item=>item.files.some(file=>file.active));
+  select.value=active?.version||versions[versions.length-1]?.version||'';
+  $('generationPromptActive').textContent=versions.length?'实际调用：'+versions.flatMap(item=>item.files.filter(file=>file.active).map(file=>`${file.label} ${item.version}`)).join('；')+'。历史记录保留当次实际提示词。':'未找到生成游戏提示词。';
+  select.disabled=!versions.length;
+  const render=()=>{
+    host.replaceChildren();
+    for(const file of versions.find(item=>item.version===select.value)?.files||[]){
+      const detail=document.createElement('details'),title=document.createElement('summary'),body=document.createElement('pre');
+      title.textContent=`${file.label} · ${file.path}${file.active?'（当前使用）':''}`;
+      body.textContent=file.content;detail.append(title,body);host.append(detail);
+    }
+  };
+  select.onchange=render;render();
+}
 function fillPromptSelect(id,items){
   const select=$(id);
   select.replaceChildren(...items.map(item=>{const option=document.createElement('option');option.value=item.version;option.textContent=`${item.version} · ${item.path}`;return option}));
@@ -93,7 +112,7 @@ fetch('/config').then(r=>r.json()).then(c=>{
   const sample=$('sample');
   const blank=document.createElement('option');blank.value='';blank.textContent='不使用样例，改为上传';
   sample.replaceChildren(blank,...(c.samples||[]).map(name=>{const o=document.createElement('option');o.value=o.textContent=name;return o}));
-  renderPromptPreview();renderCatalog();
+  renderPromptPreview();renderCatalog();initGenerationPromptPreview();
   if(typeof Workbench!=='undefined')Workbench.init(createWorkbenchBridge());
   if(typeof SettingsPanel!=='undefined')SettingsPanel.init({token:c.token,afterSave:async()=>{
     const response=await fetch('/config');if(!response.ok)throw new Error('刷新设置失败');
@@ -143,6 +162,8 @@ function renderReviewedEvents(events,readOnly=false){
   ready();
 }
 function renderEventDiagnostics(result){
+  const summary=result.event_validation_summary||result.analysis?.validation_summary;
+  if(summary?.rejected_count){const li=document.createElement('li');li.textContent=`事件校验：返回 ${summary.returned_count} 条，保留 ${summary.accepted_count} 条，${summary.rejected_count} 条未采用；详情见下方警告，不能视为原始输出全部通过。`;$('limitations').append(li)}
   const coverage=result.segment_coverage;
   if(coverage){
     const note=document.createElement('aside');note.className='validation-warnings';
@@ -286,14 +307,14 @@ $('suggest').onclick=async()=>{
   }catch(error){$('status').textContent=error.message}
   finally{busy=false;$('file').disabled=$('sample').disabled=false;ready()}
 };
-$('recommend').onclick=async()=>{
-  const selected=selectedPointIds();if(!opportunityRecord||!selected.length)return;
+$('recommend').onclick=async(options={})=>{
+  const selected=options.pointId?[options.pointId]:typeof Workbench!=='undefined'&&Workbench.gameplayPointIds?Workbench.gameplayPointIds():selectedPointIds();if(!opportunityRecord||!selected.length)return;
   busy=true;const previous={gameplayRecord,selectionDrafts,designDrafts,recommendationDrafts};ready();$('file').disabled=$('sample').disabled=true;
   $('status').textContent=`正在调用 ${$('model').value} 推荐预设玩法（计费）。`;
   try{
     const {params,body}=videoRequestParams();params.record_id=opportunityRecord.record_id;params.selected=selected.join(',');params.version=$('gameplayPrompt').value;params.model=$('model').value;
     const times={};
-    for(const c of pointControls.filter(c=>c.include.checked)){
+    for(const c of pointControls.filter(c=>selected.includes(c.pointId))){
       const t=Number(c.time.value),duration=opportunityRecord.metadata.duration_s;
       if(c.time.value.trim()===''||!Number.isFinite(t)||t<0||t>duration)throw Error('画面位置须位于片长范围内');
       times[c.pointId]=t;
@@ -351,6 +372,7 @@ function createWorkbenchBridge(){
   $('video').addEventListener('timeupdate',()=>{if(previewUntil!==null&&$('video').currentTime>=previewUntil){$('video').pause();previewUntil=null;}});
   return {
     token:()=>config.token, catalog:()=>config.games?.types||[], samples:()=>config.samples||[], ready, isBusy:()=>busy,
+    setPointTime:(pointId,recordId,time)=>{if(recordId!==opportunityRecord?.record_id)return;const control=pointControls.find(c=>c.pointId===pointId);if(control)control.time.value=String(time);},
     time:()=>Number($('video').currentTime)||0,
     duration:()=>Number.isFinite($('video').duration)?$('video').duration:(opportunityRecord?.metadata?.duration_s||eventRecord?.metadata?.duration_s||0),
     source:()=>({sample:$('sample').value,file:$('file').files[0]}),
@@ -393,7 +415,7 @@ function createWorkbenchBridge(){
       const previous=pointControls.map(c=>({c,checked:c.include.checked,time:c.time.value}));
       for(const item of previous)item.c.include.checked=item.c===c;
       c.time.value=time;
-      try{await $('recommend').onclick();}
+      try{await $('recommend').onclick({pointId});}
       finally{for(const item of previous){item.c.include.checked=item.checked;item.c.time.value=item.time;}ready();}
     },
   };

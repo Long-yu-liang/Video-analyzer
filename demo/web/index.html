@@ -16,11 +16,10 @@
 <div class="wb-topbar">
   <nav class="wb-tabs" aria-label="工作台视图">
     <button type="button" class="ghost" data-wb-tab="analysis">1. 视频分析</button>
-    <button type="button" class="ghost" data-wb-tab="opportunities">2. 寻找交互机会</button>
+    <button type="button" class="ghost" data-wb-tab="opportunities">2. 交互点管理</button>
     <button type="button" class="ghost" data-wb-tab="design">3. 玩法推荐与选择</button>
-    <button type="button" class="ghost" data-wb-tab="edit">4. 玩法方案编辑</button>
-    <button type="button" class="ghost" data-wb-tab="games">5. 游戏生成与管理</button>
-    <button type="button" class="ghost" data-wb-tab="arrange">6. 视频交互编排</button>
+    <button type="button" class="ghost" data-wb-tab="games">4. 游戏生成与管理</button>
+    <button type="button" class="ghost" data-wb-tab="arrange">5. 视频交互编排</button>
   </nav>
 </div>
 <p class="wb-status-line"><span id="projectStatus" role="status" aria-live="polite"></span><span id="wbMediaHint"></span><span class="wb-video-required">必须要有视频，否则无法正常运行</span></p>
@@ -55,6 +54,10 @@
   </div>
   <p class="note" id="flowHint">第一步使用所选模型、输入方式和采样率。事件识别选 v14 时，超过 25 秒会分段。</p>
   <details id="promptDetails"><summary>查看所选提示词全文</summary><div id="promptPreview"></div></details>
+  <section aria-labelledby="generationPromptTitle"><h3 id="generationPromptTitle">生成游戏提示词</h3>
+    <label for="generationPromptPreviewVersion">查看版本（仅预览，不切换实际调用版本）</label><select id="generationPromptPreviewVersion"></select>
+    <p id="generationPromptActive"></p><div id="generationPromptPreview"></div>
+  </section>
 </dialog>
 <div class="wb-shell">
 <div class="wb-content">
@@ -74,6 +77,7 @@
 <section id="eventResults"><h2>可观察事件</h2><p id="summary">尚未调用模型。没有预置分析结果。</p><p class="note" id="reviewHint">先识别事件。采样率和输入方式只用于第一步。可以取消勾选失实事件，再运行第二步。</p><div id="events"></div><ul id="limitations"></ul><button type="button" data-wb-go="opportunities">下一步：寻找交互机会 →</button></section>
 <section id="analysisResults"><h2>寻找交互机会</h2><p>根据第一步勾选的事件及对应画面寻找参与位置；未识别事件或未选中事件时不能调用。</p><button id="suggest" disabled>寻找交互机会</button><button type="button" class="ghost" data-wb-go="analysis">返回检查事件</button><h3>候选交互点</h3><div id="points"></div><button type="button" data-wb-go="design">下一步：选择玩法 →</button></section>
 <section id="wbTimelinePanel"><h2>项目时间轴</h2><button type="button" id="addManualPoint" class="ghost">在当前播放位置人工新增交互点</button><div id="wbTimeline"></div></section>
+<section id="wbPointSettings"><h2>交互点设置</h2><div id="wbPointSettingsBody"></div></section>
 <section id="wbRecommendationActions"><h2>为交互点推荐玩法</h2><p>使用当前选择的模型和玩法提示词，为勾选的候选点推荐方案；调用前可回到分析页检查设置。</p><button id="recommend" disabled>推荐小游戏</button></section>
 <div id="wbDesign" class="wb-grid"><aside id="wbPointList" class="wb-point-list"></aside><section id="wbEditor"></section></div>
 <section id="wbArrange"><div id="wbArrangement"></div></section>

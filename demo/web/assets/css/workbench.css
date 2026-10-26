@@ -1,4 +1,8 @@
 /* Navigation and presentation only; inference controls and defaults are unchanged. */
+.wb-dialog-body{padding:18px 22px;overflow:auto;max-height:calc(90vh - 78px)}
+#wbPointSettings{display:none;min-width:0;grid-column:2}
+body[data-workbench-view=opportunities] #wbPointSettings{display:block}
+@media(max-width:950px){#wbPointSettings{grid-column:1}}
 body{max-width:1600px;margin-top:24px}
 header{padding-top:16px}header h1{font-size:28px}header p{margin-bottom:12px}
 .wb-topbar{position:sticky;top:0;z-index:20;margin:8px 0;padding:8px 0;background:#eeede7}
@@ -53,18 +57,18 @@ main.grid>*,.wb-grid>*{min-width:0}main.grid>section{padding:20px}
 #analysisResults,#eventResults,#wbTimelinePanel{display:none}
 body[data-workbench-view=analysis] #eventResults,body[data-workbench-view=opportunities] #analysisResults,
 body[data-workbench-view=opportunities] #wbTimelinePanel,body[data-workbench-view=arrange] #wbTimelinePanel{display:block}
-body[data-workbench-view=design] #wbDesign,body[data-workbench-view=edit] #wbDesign,body[data-workbench-view=games] #wbDesign{display:grid}
-body[data-workbench-view=edit] #legacyGameplayPanel,body[data-workbench-view=design] #wbRecommendationActions,
+body[data-workbench-view=design] #wbDesign,body[data-workbench-view=games] #wbDesign{display:grid}
+body[data-workbench-view=design] #legacyGameplayPanel,body[data-workbench-view=design] #wbRecommendationActions,
 body[data-workbench-view=games] #gameWorkbenchPanel,body[data-workbench-view=arrange] #wbArrange{display:block}
 body:not([data-workbench-view=analysis]) #analysisControls,
 body:not([data-workbench-view=analysis]) .wb-media-source{display:none}
 body[data-workbench-view=arrange] #addManualPoint{display:none}
-body[data-workbench-view=edit] #modelControls,body[data-workbench-view=games] #modelControls,body[data-workbench-view=arrange] #modelControls{display:none}
-body[data-workbench-view=edit] #configState,body[data-workbench-view=games] #configState,body[data-workbench-view=arrange] #configState{display:none}
+body[data-workbench-view=games] #modelControls,body[data-workbench-view=arrange] #modelControls{display:none}
+body[data-workbench-view=games] #configState,body[data-workbench-view=arrange] #configState{display:none}
 body:not([data-workbench-view=analysis]) #wbDesign{grid-template-columns:1fr}
 body:not([data-workbench-view=analysis]) #wbPointList{display:flex;gap:10px;overflow:auto;max-height:250px}
 body:not([data-workbench-view=analysis]) .wb-point{min-width:180px;max-width:220px;margin-bottom:0}
-body[data-workbench-view=design] #wbTimelinePanel,body[data-workbench-view=edit] #wbTimelinePanel,body[data-workbench-view=games] #wbTimelinePanel{display:none}
+body[data-workbench-view=design] #wbTimelinePanel,body[data-workbench-view=games] #wbTimelinePanel{display:none}
 @media(max-width:1150px){.grid{grid-template-columns:240px minmax(0,1fr)}body{padding:0 16px}}
 @media(max-width:950px){
   .app-toolbar{align-items:flex-start}.app-toolbar-actions{justify-content:flex-start}

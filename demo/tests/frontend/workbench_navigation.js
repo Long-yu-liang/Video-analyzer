@@ -4,14 +4,14 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../../web/assets/js/workbench.js'), 'utf8');
-const views = ['analysis', 'opportunities', 'design', 'edit', 'games', 'arrange'];
+const views = ['analysis', 'opportunities', 'design', 'games', 'arrange'];
 const buttons = views.map(view => ({dataset: {wbTab: view}, attributes: {},
   setAttribute(k, v) {this.attributes[k] = v;}, removeAttribute(k) {delete this.attributes[k];}}));
-const nodes = {wbViewTitle: {}, wbViewHint: {}};
+const nodes = {wbViewTitle: {}, wbViewHint: {},projectStatus:{}};
 const context = {document: {body: {dataset: {}}, getElementById: id => nodes[id], querySelectorAll: () => buttons}};
 vm.createContext(context);
 vm.runInContext(source.replace('root.Workbench={init,',
-  'root.navigationTest={setup(){render=()=>{};renderEditor=()=>{};touch=()=>{};bridge={catalog:()=>[{id:"timing"}]};selectedId="retained";},selected:()=>selectedId,toggle:toggleDraftEditor,collapsed:p=>collapsedDraftEditors.has(p)};root.Workbench={init,'), context);
+  'root.navigationTest={setup(){render=()=>{};renderEditor=()=>{};touch=()=>{};state=blank();state.points=[{...point("retained",1,"行为","依据"),gameplay_committed:true}];bridge={catalog:()=>[{id:"timing"}],peek:()=>({session:{opportunities:"fixture",controls:[]}})};selectedId="retained";},state:()=>state,commit:commitGameplaySelection,controls:rows=>bridge.peek=()=>({session:{opportunities:"fixture",controls:rows}}),selected:()=>selectedId,toggle:toggleDraftEditor,collapsed:p=>collapsedDraftEditors.has(p)};root.Workbench={init,'), context);
 context.navigationTest.setup();
 for (const view of views) {
   context.Workbench.navigate(view);
@@ -24,7 +24,7 @@ for (const view of views) {
 context.Workbench.navigate('unknown');
 assert.equal(context.document.body.dataset.workbenchView, 'arrange');
 const html = fs.readFileSync(path.join(__dirname, '../../web/index.html'), 'utf8');
-assert.equal((html.match(/data-wb-tab=/g) || []).length, 6);
+assert.equal((html.match(/data-wb-tab=/g) || []).length, 5);
 assert.match(html, /id="eventResults"[\s\S]*id="events"[\s\S]*id="analysisResults"/);
 assert.equal((html.match(/id="suggest"/g) || []).length, 1);
 assert.match(html, /id="analysisResults"[\s\S]*id="suggest"/);
@@ -42,5 +42,27 @@ assert.equal(manual.design.title,'人工玩法');assert.equal(context.navigation
 context.navigationTest.toggle(manual);assert.equal(context.navigationTest.collapsed(manual),true);
 assert.equal(manual.design.title,'人工玩法','hiding a new design must retain it');
 assert.ok(html.includes('<summary>历史方案编辑器</summary>'));
-assert.ok(source.includes("button('确认玩法描述',"));
-console.log('Six-view navigation, separated events/opportunities and context retention checks passed');
+assert.ok(source.includes("button('保存并确认玩法描述',"));
+assert.ok(source.includes("dialog.showModal()"),'description editor uses a dialog');
+const editorSource=source.split('function renderEditor()')[1].split('function renderPointSettings()')[0];
+assert.ok(!editorSource.includes('定位时间（秒）'),'step four must not contain point settings');
+const pointSettings=source.split('function renderPointSettings()')[1].split('function renderOptionCards(')[0];
+assert.ok(pointSettings.includes('定位时间（秒）')&&pointSettings.includes('玩家可以参与什么'));
+assert.ok(pointSettings.includes('setPointTime'),'point time changes synchronize with the recommendation request');
+assert.ok(html.includes('2. 交互点管理')&&html.includes('4. 游戏生成与管理'));
+assert.ok(!html.includes('data-wb-tab="edit"'));
+context.Workbench.navigate('edit');assert.equal(context.document.body.dataset.workbenchView,'design','legacy edit links redirect to step three');
+const css=fs.readFileSync(path.join(__dirname,'../../web/assets/css/workbench.css'),'utf8');
+assert.ok(css.includes('body[data-workbench-view=design] #legacyGameplayPanel'),'history editor lives in step three');
+assert.ok(html.includes('id="wbPointSettingsBody"'));
+context.navigationTest.state().points=[{...globalThis.JSON.parse(JSON.stringify({id:'p1',review:'kept',versions:[],origin:'ai',point_id:'p1',source_record_id:'fixture'}))}];
+context.Workbench.navigate('opportunities');context.Workbench.navigate('design');
+assert.equal(context.document.body.dataset.workbenchView,'opportunities','unsubmitted points cannot enter step three');
+context.navigationTest.commit();assert.match(nodes.projectStatus.textContent,/至少一个/);
+context.navigationTest.state().points.push({id:'p2',review:'kept',versions:[],origin:'ai',point_id:'p2',source_record_id:'fixture'});
+context.navigationTest.controls([{point_id:'p1',checked:true}]);context.navigationTest.commit();
+assert.equal(context.document.body.dataset.workbenchView,'design');
+assert.equal(context.navigationTest.state().points[0].gameplay_committed,true);
+assert.equal(context.navigationTest.state().points[1].gameplay_committed,false,'unselected points stay in step two');
+assert.deepEqual(Array.from(context.Workbench.gameplayPointIds()),['p1']);
+console.log('Five-view navigation, legacy edit redirect, submission gate and context retention checks passed');

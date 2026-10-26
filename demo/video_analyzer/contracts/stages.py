@@ -3,6 +3,46 @@ import math
 from .output import ContractError, MISSING, expected, parse_json, require_text
 from ..gameplay.recommendations import FIELDS as GAMEPLAY_FIELDS
 
+EVENT_TIME_TOLERANCE_S = 0.1  # Rounding tolerance, not a claim of model timestamp accuracy.
+
+
+def validate_event(event, path, duration):
+    if not isinstance(event, dict):
+        raise expected(path, '对象', event)
+    event = dict(event)
+    corrections = []
+    for key in ('start_s', 'end_s', 'observation_s'):
+        value = event.get(key)
+        if type(value) not in (int, float) or not math.isfinite(value):
+            raise expected(path+'.'+key, '有限数字', event.get(key, MISSING))
+    if event['start_s'] > event['end_s']:
+        raise ContractError(path+'.end_s', '事件结束时间早于开始时间，不自动交换。', 'invalid_time')
+    original_target = min(event['end_s'], max(event['start_s'], event['observation_s']))
+    if abs(original_target-event['observation_s']) > EVENT_TIME_TOLERANCE_S+1e-9:
+        raise ContractError(path+'.observation_s', '代表画面时间必须在该事件 start_s–end_s 区间内。', 'invalid_time')
+    def correct(key, target):
+        original = event[key]
+        if original == target:
+            return
+        corrections.append({'path': path+'.'+key, 'code': 'time_rounding_corrected',
+            'action': 'clamp_to_boundary', 'original_value': original, 'corrected_value': target,
+            'tolerance_s': EVENT_TIME_TOLERANCE_S,
+            'message': f'{path}.{key} 从 {original:g} 秒收到边界 {target:g} 秒（容差 0.05 秒），原始响应未修改。'})
+        event[key] = target
+    for key in ('start_s', 'end_s', 'observation_s'):
+        value = event[key]
+        if value < -EVENT_TIME_TOLERANCE_S-1e-9 or value > duration+EVENT_TIME_TOLERANCE_S+1e-9:
+            raise ContractError(path+'.'+key, f'时间 {value:g} 秒超出片长 {duration:g} 秒允许范围。', 'invalid_time')
+        correct(key, min(duration, max(0., value)))
+    observed = event['observation_s']
+    target = min(event['end_s'], max(event['start_s'], observed))
+    if abs(target-observed) > EVENT_TIME_TOLERANCE_S+1e-9:
+        raise ContractError(path+'.observation_s', '代表画面时间必须在该事件 start_s–end_s 区间内。', 'invalid_time')
+    correct('observation_s', target)
+    for key in ('description', 'evidence', 'uncertainty'):
+        require_text(event, key, path)
+    return event, corrections
+
 
 def validate_stage_events(text, duration):
     result = parse_json(text)
@@ -25,29 +65,29 @@ def validate_stage_events(text, duration):
             raise expected(f'limitations[{index}]', '字符串', item)
     if 'interaction_points' in result:
         raise ContractError('interaction_points', '不属于事件识别阶段，应只记录事实事件。', 'unexpected_field')
-    events = []
+    events, rejected = [], []
+    warnings = result.pop('validation_warnings', [])
+    returned_count = len(result['events'])
     for index, event in enumerate(result['events']):
         path = f'events[{index}]'
-        if not isinstance(event, dict):
-            raise expected(path, '对象', event)
-        for key in ('start_s', 'end_s', 'observation_s'):
-            value = event.get(key)
-            if type(value) not in (int, float):
-                raise expected(path+'.'+key, '有限数字', event.get(key, MISSING))
-            if not math.isfinite(value) or not 0 <= value <= duration + 1:
-                raise ContractError(path+'.'+key, f'时间 {value!r} 超出片长 {duration:g} 秒允许范围。', 'invalid_time')
-            if value > duration:
-                event[key] = duration
-                result['limitations'].append(f'{key} {value:g} 秒略超片长，已收到片尾。')
-        if not event['start_s'] <= event['observation_s'] <= event['end_s']:
-            raise ContractError(path+'.observation_s', '代表画面时间必须在该事件 start_s–end_s 区间内。', 'invalid_time')
-        for key in ('description', 'evidence', 'uncertainty'):
-            require_text(event, key, path)
-        events.append(event)
+        try:
+            valid, corrections = validate_event(event, path, duration)
+            events.append(valid)
+            warnings.extend(corrections)
+        except ContractError as error:
+            rejected.append({'index': index, **error.detail, 'action': 'rejected_event'})
+    warnings.extend(rejected)
+    if returned_count and not events:
+        error = ContractError(rejected[0]['path'], '所有返回事件均未通过校验；不是未发现事件。'+rejected[0]['message'], 'no_valid_events')
+        error.detail.update(warnings=warnings, returned_count=returned_count, rejected_count=len(rejected))
+        raise error
     events.sort(key=lambda item: (item['observation_s'], item['start_s']))
     for index, event in enumerate(events, 1):
         event['observation_id'] = f'e{index}'
     result['events'] = events
+    if warnings:
+        result['validation_warnings'] = warnings
+    result['validation_summary'] = {'returned_count': returned_count, 'accepted_count': len(events), 'rejected_count': len(rejected)}
     return result
 
 

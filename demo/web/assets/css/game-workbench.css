@@ -16,6 +16,8 @@
 .gw-version-body{overflow:auto;padding:20px;min-height:0;overflow-wrap:anywhere;overscroll-behavior:contain}
 .gw-version-body>section{padding:0;border:0;background:transparent}.gw-version-body pre{max-width:100%;max-height:340px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
 .gw-version-body .gw-warning{color:#a64a2f}.gw-version-body button{white-space:normal}
+.gw-task-card,.gw-input-summary{padding:14px 18px;margin:12px 0;background:#f1f4ed;border:1px solid #c4cec4;border-radius:10px;overflow-wrap:anywhere}
+.gw-task-card p,.gw-input-summary p{margin:6px 0;font-size:14px}.gw-task-card strong{display:block}
 .gw-design{margin:20px 0}.gw-design>h3{margin:0 0 10px}.gw-design-meta{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}
 .gw-design-meta span{background:#eaf0e7;border:1px solid #d9dfd6;border-radius:20px;padding:4px 11px;font-size:13px;color:#30483c}
 .gw-design-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}

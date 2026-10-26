@@ -27,7 +27,7 @@ function element(id = '') {
 
 const ids = ['model', 'mode', 'fps', 'eventPrompt', 'opportunityPrompt', 'gameplayPrompt', 'promptPreview', 'flowHint', 'sample', 'file', 'video', 'recognize', 'suggest', 'recommend', 'reset', 'reviewHint',
   'download', 'summary', 'metrics', 'points', 'events', 'limitations', 'catalogNote', 'gameplay', 'saveBrief',
-  'raw', 'status', 'configState', 'tokenUsage'];
+  'raw', 'status', 'configState', 'tokenUsage', 'generationPromptPreviewVersion', 'generationPromptActive', 'generationPromptPreview'];
 const nodes = Object.fromEntries(ids.map(id => [id, element(id)]));
 
 let requestedURL, briefBody;
@@ -41,6 +41,7 @@ const fetch = async (url, options = {}) => {
   if (url === '/config') return { json: async () => ({
     models: { 'qwen3.8-flash': 'beeroute', 'qwen3-vl-plus': 'beeroute' }, samples: ['S05_传球投篮.mp4'],
     configured: { beeroute: true }, prompt_file: 'prompts/v7.txt',
+    game_generation_prompts: ['v1','v2'].map(version=>({version,files:['generate','repair'].map(name=>({label:name==='generate'?'生成游戏':'修复游戏',path:`prompts/game-generation/${version}/${name}.txt`,content:`${version} ${name} 全文`,active:version==='v2'}))})),
     prompt_files: ['prompts/v5.txt', 'prompts/v6.txt', 'prompts/v7.txt'], token: 'fixture',
     stage_prompts: {
       events: [
@@ -125,6 +126,13 @@ vm.runInNewContext(usageScript + '\n' + script, {
   assert.equal(nodes.eventPrompt.value, 'v14');
   assert.equal(nodes.opportunityPrompt.value, 'v14');
   assert.equal(nodes.gameplayPrompt.value, 'v15');
+  assert.equal(nodes.generationPromptPreviewVersion.value,'v2');
+  assert.match(nodes.generationPromptActive.textContent,/生成游戏 v2/);
+  assert.equal(nodes.generationPromptPreview.children.length,2);
+  assert.equal(nodes.generationPromptPreview.children[0].children[1].textContent,'v2 generate 全文');
+  nodes.generationPromptPreviewVersion.value='v1';nodes.generationPromptPreviewVersion.onchange();
+  assert.equal(nodes.generationPromptPreview.children[1].children[1].textContent,'v1 repair 全文');
+  assert.match(nodes.generationPromptActive.textContent,/生成游戏 v2/,'preview selection never changes runtime version');
   assert.match(nodes.promptPreview.children.map(child => child.textContent).join('\n'), /长视频分段识别/);
   assert.match(nodes.promptPreview.children.map(child => child.textContent).join('\n'), /v14 机会/);
   assert.match(nodes.promptPreview.children.map(child => child.textContent).join('\n'), /推荐玩法/);

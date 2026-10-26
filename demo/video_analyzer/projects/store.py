@@ -116,9 +116,11 @@ def validate(state):
             raise ValueError(f'{label} ID 无效或重复。')
         ids.add(point['id'])
         allowed_point = {'id', 'origin', 'source_record_id', 'point_id', 'time_s', 'opportunity', 'reason', 'review',
-                         'enabled', 'versions', 'selected', 'design', 'brief', 'confirmed', 'stale', 'merged_into', 'decision_reason'}
+                         'enabled', 'versions', 'selected', 'design', 'brief', 'confirmed', 'stale', 'merged_into', 'decision_reason', 'gameplay_committed'}
         if set(point) - allowed_point:
             raise ValueError(f'{label} 含未知字段。')
+        if 'gameplay_committed' in point and type(point['gameplay_committed']) is not bool:
+            raise ValueError('交互点提交标记应为布尔值。')
         if point.get('origin') not in ('ai', 'manual') or point.get('review') not in ('pending', 'kept', 'discarded'):
             raise ValueError(f'{label} 来源或审核状态无效。')
         number(point.get('time_s'), duration, label+'.time_s')
@@ -138,13 +140,24 @@ def validate(state):
             raise ValueError(f'{label} 方案版本过多。')
         version_ids = set()
         for version in versions:
-            if not isinstance(version, dict) or set(version) - {'id', 'record_id', 'option_id', 'design', 'time_s', 'label'}:
+            if not isinstance(version, dict) or set(version) - {'id', 'record_id', 'option_id', 'design', 'time_s', 'label', 'origin', 'brief', 'confirmed', 'edited'}:
                 raise ValueError(f'{label} 方案版本字段无效。')
             text(version.get('id'), '方案版本 ID', True, 200)
             if version['id'] in version_ids:
                 raise ValueError('方案版本重复。')
             version_ids.add(version['id'])
-            identifier(version.get('record_id'))
+            if version.get('origin', 'ai') not in ('ai', 'manual'):
+                raise ValueError('方案来源无效。')
+            if version.get('origin') != 'manual' or version.get('record_id') is not None:
+                identifier(version.get('record_id'))
+            for flag in ('confirmed', 'edited'):
+                if flag in version and type(version[flag]) is not bool:
+                    raise ValueError('方案确认和编辑标记应为布尔值。')
+            description = version.get('brief', {})
+            if not isinstance(description, dict) or set(description) - set(BRIEF_FIELDS):
+                raise ValueError('方案描述字段无效。')
+            for field in BRIEF_FIELDS:
+                text(description.get(field, ''), field)
             text(version.get('option_id'), '方案 ID', True, 150)
             text(version.get('label', ''), '版本名称', limit=500)
             number(version.get('time_s'), duration, '版本画面位置')
@@ -240,8 +253,11 @@ class Store:
 
     def delete(self, payload):
         """Remove from active projects, retaining all revisions in a local trash folder."""
-        with LOCK:
+        from ..gameplay import generation
+        with LOCK, generation.LOCK:
             project_id = identifier(payload.get('project_id'))
+            if any(project == project_id for project, _ in generation.ACTIVE):
+                raise Conflict('该项目有游戏正在生成，请等待任务结束再删除。')
             previous = self.read(project_id)
             if type(payload.get('revision')) is not int or payload['revision'] != previous['revision']:
                 raise Conflict('项目已有更新，请重新打开后再删除，未删除任何内容。')

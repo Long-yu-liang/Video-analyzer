@@ -7,6 +7,8 @@
   let arrangementDraft=null;
   let versionDialog=null;
   let returnToVersion=null, libraryRenderedProject=null;
+  let taskHost=null,taskTimer=null,taskProject=null,taskEpoch=0;
+  const taskStates=new Map();
   const versionDrafts=new Map(),libraryExpansion=new Map();
   const $=id=>document.getElementById(id);
   const element=(tag,text)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;return e;};
@@ -68,7 +70,8 @@
   function init(getCurrent) {
     current=getCurrent;const outer=element('section');outer.id='gameWorkbenchPanel';document.querySelector('main').append(outer);
     libraryHost=element('div');libraryHost.id='gameLibrary';panel=element('div');panel.id='gameDetail';
-    outer.append(element('h2','项目游戏库'),libraryHost,panel);
+    taskHost=element('div');taskHost.setAttribute('aria-live','polite');
+    outer.append(taskHost,element('h2','项目游戏库'),libraryHost,panel);
     panel.append(element('p','生成结果自动保存，无需再次保存代码；采用版本单独保存。打开游戏库即可查看和试玩，不必重新调用模型。'));
     refreshLibrary();
     root.addEventListener('message',onMessage);
@@ -245,7 +248,9 @@
     const {project,point}=context;
     selectedRecord=null;panel.replaceChildren(element('h2',`游戏工作台 / ${point.design?.title||point.id} · ${point.time_s.toFixed(2)} 秒`));
     panel.append(element('p','一次 MiniMax 调用补全详细设计及 JS。只提交下面这个点的文字，不发送视频或截图。'));
-    const summary=element('pre',JSON.stringify(inputView(point),null,2));summary.className='gw-input';panel.append(summary);
+    const summary=element('div');summary.className='gw-input-summary';
+    for(const [label,value] of [['方案',point.design?.title],['玩法',point.design?.game_id],['位置',point.time_s+' 秒'],['参与行为',point.opportunity],['玩家目标',point.design?.player_goal],['操作',point.design?.player_action]])summary.append(element('p',`${label}：${value||'未填写'}`));
+    const raw=element('details');raw.append(element('summary','查看本次完整输入 JSON'),element('pre',JSON.stringify(inputView(point),null,2)));panel.append(summary,raw);
     panel.append(button('确认输入并生成此点',()=>generate(context)),button('刷新该点生成历史',()=>showPoint(context)),
       button('重新开始串联试玩',()=>startSequence()));
     const records=await request(`/game-generation?project_id=${project.project_id}&point_id=${encodeURIComponent(point.id)}`);
@@ -260,11 +265,45 @@
     if(!p||JSON.stringify(inputView(p))!==JSON.stringify(inputView(context.point)))throw Error('玩法已变化，请重新保存并选择');
     if(!root.confirm(parent?'确认为该点调用一次 MiniMax 修复？':'确认为此点调用一次 MiniMax？不会生成其他点。'))return;
     busy=true;document.querySelectorAll('[data-game-generate]').forEach(b=>b.disabled=true);
-    const status=element('p','正在调用 MiniMax，仅生成当前玩点…');(versionDialog?.dialog.open?versionDialog.body:panel).append(status);
+    const status=element('p','正在提交后台生成任务…');(versionDialog?.dialog.open?versionDialog.body:panel).append(status);
     try {
-      const record=await request(parent?'/game-repair':'/game-generation',{project_id:now.project.project_id,revision:now.project.revision,point_id:p.id,...(parent?{generation_id:parent.record_id,problem}:{})});
-      if(current().project?.project_id===now.project.project_id){status.textContent='生成已完成，原始记录已自动保存';display(record,context);refreshLibrary();}
+      await request('/game-tasks',{project_id:now.project.project_id,revision:now.project.revision,point_id:p.id,...(parent?{generation_id:parent.record_id,problem}:{})});
+      status.textContent='任务已提交，可切换页面。请在生成任务中查看状态；关闭此面板不取消调用。';
+      scheduleTasks(true);
     }finally{busy=false;document.querySelectorAll('[data-game-generate]').forEach(b=>b.disabled=false);}
+  }
+  function scheduleTasks(immediate=false){
+    if(!taskHost)return;
+    clearTimeout(taskTimer);taskTimer=setTimeout(refreshTasks,immediate?0:2000);
+  }
+  async function refreshTasks(){
+    const project=current().project?.project_id,epoch=taskEpoch;
+    if(!project){taskHost.replaceChildren();return;}
+    try{
+      const tasks=await request('/game-tasks?project_id='+project);
+      if(project!==current().project?.project_id||epoch!==taskEpoch)return;
+      taskHost.replaceChildren();
+      if(tasks.length)taskHost.append(element('h3','游戏生成任务'),element('p','可切换页面或刷新，任务由本地服务继续执行。请勿关闭服务；关闭面板不等于取消计费。'));
+      const labels={queued:'已提交，准备生成',waiting_model:'等待模型返回',checking:'检查结构与语法',saving:'保存产物',completed:'已完成，尚不代表试玩通过',failed:'失败',interrupted:'服务中断，未自动重试'};
+      for(const task of tasks){
+        const active=['queued','waiting_model','checking','saving'].includes(task.status);
+        const card=element('article');card.className='gw-task-card';
+        const seconds=Math.max(0,Math.floor(((task.finished_at?Date.parse(task.finished_at):Date.now())-Date.parse(task.created_at))/1000));
+        card.append(element('strong',`${task.title} · ${labels[task.status]||task.status}`),element('p',`${active?'已等待':'用时'} ${seconds} 秒${active&&seconds>=60?'；仍在等待，不代表失败，请勿重复提交。':''}`));
+        if(task.error)card.append(element('p',task.error));
+        if(task.generation_id&&!active&&task.status!=='interrupted')card.append(button('查看结果／继续试玩',async()=>{
+          const r=await request('/game-generation?id='+task.generation_id),now=current();
+          if(now.project?.project_id!==project)return;
+          const point=now.state.points.find(p=>p.id===task.point_id);
+          if(!point)throw Error('该交互点已移除，请从游戏库查看记录');
+          display(r,{project:now.project,point});
+        }));
+        taskHost.append(card);
+        const previous=taskStates.get(task.task_id);taskStates.set(task.task_id,task.status);
+        if(previous&&previous!==task.status&&!active){showError({message:`${task.title}：${labels[task.status]}。请查看生成任务。`});refreshLibrary();}
+      }
+      scheduleTasks();
+    }catch(error){if(project===current().project?.project_id){taskHost.replaceChildren(element('p','任务状态暂时无法读取，请勿重新生成；稍后自动恢复检查。'));clearTimeout(taskTimer);taskTimer=setTimeout(refreshTasks,5000);}}
   }
   function renderGameDesign(record) {
     const design=record.output?.design;
@@ -504,6 +543,7 @@
       play(record,true,true).catch(e=>{showError(e);if(sequence)sequence.error=true;}).finally(()=>{if(sequence)sequence.triggering=false;});}
   }
   function sync(){const now=current();const key=(now.project?.project_id||'')+':'+(now.project?.revision||0);
+    if(taskProject!==now.project?.project_id){taskProject=now.project?.project_id;taskEpoch++;scheduleTasks(true);}
     if(versionDialog&&now.project?.project_id!==versionDialog.project)closeVersionDialog();
     if(libraryHost&&key!==libraryKey){const changed=libraryKey.split(':')[0]!==key.split(':')[0];libraryKey=key;if(changed){panel.replaceChildren();arrangementDraft=null;}refreshLibrary();}
     if(theater&&(now.project?.project_id!==theater.project||!now.verified||!matches(theater.record,now.state.points.find(p=>p.id===theater.record.point_id))))dismissTheater();

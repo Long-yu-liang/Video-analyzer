@@ -64,6 +64,16 @@ class GameWorkbenchTests(unittest.TestCase):
         self.assertEqual(self.store.read(self.project['project_id']), self.project)
         self.assertFalse(result['validation']['playtested'])
 
+    def test_v2_generation_and_repair_prompts_are_recorded(self):
+        first = games.generate(self.root, self.payload, self.opener)
+        self.assertEqual(first['prompt_file'], 'prompts/game-generation/v2/generate.txt')
+        self.assertIn('输出前的简要自检', self.body['messages'][0]['content'])
+        self.assertFalse(first['validation']['playtested'])
+        repaired = games.generate(self.root, {**self.payload, 'generation_id': first['record_id'],
+                                             'problem': '检查元素绑定'}, self.opener)
+        self.assertEqual(repaired['prompt_file'], 'prompts/game-generation/v2/repair.txt')
+        self.assertIn('不以可选链', repaired['prompt'])
+
     def test_readable_storage_artifacts_and_name_collisions(self):
         first = games.generate(self.root, self.payload, self.opener)
         second = games.generate(self.root, self.payload, self.opener)

@@ -27,6 +27,21 @@ def point():
 
 
 class ProjectChecks(unittest.TestCase):
+    def test_independent_manual_option_descriptions_roundtrip(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store=projects.Store(folder)
+            data=state();p=point();data['points']=[p]
+            p['versions']=[{'id':'manual_a','origin':'manual','record_id':None,'option_id':'manual_a',
+                            'label':'自行设计','design':copy.deepcopy(p['design']),'time_s':2,
+                            'brief':{'screen':'A画面'},'edited':True,'confirmed':False}]
+            p['selected']='manual_a';p['brief']={'screen':'A画面'};p['gameplay_committed']=True
+            saved=store.save({'state':data})
+            restored=store.read(saved['project_id'])
+            self.assertEqual(restored['state']['points'][0]['versions'][0]['brief']['screen'],'A画面')
+            self.assertIs(restored['state']['points'][0]['gameplay_committed'],True)
+            bad=copy.deepcopy(restored);bad['state']['points'][0]['versions'][0]['origin']='ai'
+            with self.assertRaises(ValueError):store.save(bad)
+
     @unittest.skipUnless(shutil.which('node'), 'Node.js not installed')
     def test_delete_ui(self):
         result = subprocess.run(['node', str(app.DEMO / 'tests/frontend/project_delete.js')],

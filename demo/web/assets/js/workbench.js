@@ -15,6 +15,21 @@
     return {id, time_s:time, opportunity, reason, origin, review:'kept', enabled:false,
       versions:[], selected:null, design:null, brief:{}, confirmed:false, stale:false, decision_reason:''};
   }
+  function gameReadyPoints(points){
+    return points.filter(p=>p.review==='kept'&&!p.merged_into&&p.design&&
+      (p.selected||(p.gameplay_committed===undefined&&!(p.versions||[]).length)));
+  }
+  const manualGameplaySelection=new WeakSet();
+  function availableGameplayPoints(){return state.points.filter(p=>p.review==='kept'&&!p.merged_into&&(p.gameplay_committed===true||(p.gameplay_committed===undefined&&(p.design||p.versions.length))));}
+  function commitGameplaySelection(){
+    const session=bridge.peek().session;
+    const selected=state.points.filter(p=>p.review==='kept'&&!p.merged_into&&(p.origin==='manual'?manualGameplaySelection.has(p):
+      p.source_record_id===session.opportunities&&session.controls?.some(c=>c.point_id===p.point_id&&c.checked)));
+    if(!selected.length){message('请先勾选至少一个交互点，再点击“下一步：选择玩法”。',true);return;}
+    const ids=new Set(selected.map(p=>p.id));
+    for(const p of state.points)p.gameplay_committed=ids.has(p.id);
+    selectedId=selected[0].id;touch();switchView('design');
+  }
   function change(p, values) {
     const changed = Object.keys(values).some(k => JSON.stringify(p[k]) !== JSON.stringify(values[k]));
     if (!changed) return;
@@ -23,9 +38,35 @@
   }
   function choose(p, version) {
     if (!p.versions.some(v => v.id === version.id)) throw Error('方案不属于该点');
-    p.selected = version.id; p.design = clone(version.design); p.brief = {}; p.confirmed = false;
+    const previous=p.versions.find(v=>v.id===p.selected);
+    if(previous&&p.design){previous.design=clone(p.design);previous.brief=clone(p.brief||{});previous.confirmed=p.confirmed;}
+    p.selected = version.id; p.design = clone(version.design); p.brief = clone(version.brief||{}); p.confirmed = false;
     delete p.merged_into;
     p.stale = Math.abs(p.time_s - version.time_s) > 0.000001;
+  }
+  function saveOption(p,versionId,design,brief,id){
+    let version=p.versions.find(v=>v.id===versionId);
+    if(versionId&&!version)throw Error('方案已被删除');
+    if(!version){
+      if(p.versions.length>=100)throw Error('该点最多保存100个方案');
+      version={id,record_id:null,option_id:id,origin:'manual',label:'自行设计',time_s:p.time_s,design:cleanDesign(design)};
+      p.versions.push(version);
+    }
+    // Save the old draft before editing or switching its selected version.
+    const old=p.versions.find(v=>v.id===p.selected);
+    if(old&&old.id!==version.id&&p.design){old.design=clone(p.design);old.brief=clone(p.brief||{});}
+    version.design=cleanDesign(design);version.brief=clone(brief);version.edited=true;
+    version.time_s=p.time_s;version.confirmed=false;
+    p.selected=version.id;p.design=clone(version.design);p.brief=clone(version.brief);p.confirmed=false;
+    return version;
+  }
+  function removeVersion(p, versionId) {
+    if(!p.versions.some(v=>v.id===versionId))throw Error('方案不存在或已被删除');
+    p.versions=p.versions.filter(v=>v.id!==versionId);
+    if(p.selected===versionId){
+      // Preserve edited content as a manual draft; do not silently select another recommendation.
+      p.selected=null;p.confirmed=false;p.enabled=false;
+    }
   }
   function confirmPoint(p) {
     if (p.stale || p.review !== 'kept' || !p.design) throw Error('请先保留该点并核对当前画面');
@@ -99,7 +140,7 @@
       games:library?`${library.points.flatMap(p=>p.versions).filter(v=>v.usable).length} 个可用版本`:'游戏库尚未读取',
       arrange:`${enabled} 个点已启用（需检查）`};
   }
-  const Model = {blank, point, change, choose, confirmPoint, merge, ingest, warnings, cleanDesign, missingFields, workflowProgress};
+  const Model = {blank, point, change, choose, saveOption, removeVersion, confirmPoint, merge, ingest, warnings, cleanDesign, missingFields, workflowProgress, gameReadyPoints};
   root.WorkbenchModel = Model;
   if (typeof document === 'undefined') return;
 
@@ -114,6 +155,11 @@
   const button = (text, action, className='ghost') => {const b=make('button',text,className);b.type='button';
     b.onclick=async()=>{try{await action();}catch(error){message(error.message,true);}};return b;};
   function message(value, error=false) { $('projectStatus').textContent=value; $('projectStatus').className=error?'wb-error':'wb-save-state'; }
+  function deleteRecommendation(p,v){
+    const selected=p.selected===v.id;
+    if(!root.confirm(`删除推荐方案“${v.design.title||gameName(v.design.game_id)}”？\n仅从当前项目的推荐列表移除，不删除原始模型记录或已生成游戏。${selected?'\n这是当前所选方案：已编辑内容会保留为草稿，需要重新确认；不自动选择其他方案。':''}`))return;
+    removeVersion(p,v.id);touch(true);
+  }
   function duration() { return state.video?.duration_s || bridge.duration() || 0; }
   function checkTime(value) { const n=Number(value); if(String(value).trim()===''||!Number.isFinite(n)||n<0||n>duration())throw Error('位置须在视频时长范围内');return n; }
   function seek(time) { if(!verified){message('请先重新选择同一视频，哈希匹配后才能回看',true);return;} bridge.seek(time); }
@@ -205,7 +251,9 @@
     renderTimeline();
   }
   function switchView(view,pointId) {
-    if(!['analysis','opportunities','design','edit','games','arrange'].includes(view))return;
+    if(view==='edit')view='design'; // Historical links now share the recommendation/description workspace.
+    if(!['analysis','opportunities','design','games','arrange'].includes(view))return;
+    if(view==='design'&&!availableGameplayPoints().length){message('请先在第二步勾选交互点，并点击“下一步：选择玩法”。',true);return;}
     if(pointId&&state.points.some(p=>p.id===pointId))selectedId=pointId;
     currentView=view;document.body.dataset.workbenchView=view;
     document.querySelectorAll('[data-wb-tab]').forEach(b=>{
@@ -213,9 +261,8 @@
       if(b.dataset.wbTab===view)b.setAttribute('aria-current','step');else b.removeAttribute('aria-current');
     });
     const headings={analysis:['视频分析','识别可观察事件，回看画面并排除失实描述。'],
-      opportunities:['寻找交互机会','依据已勾选的事件寻找参与机会，回看、调整或删除候选位置。'],
-      design:['玩法推荐与选择','比较推荐方案，为每个交互点选择一种玩法。'],
-      edit:['玩法方案编辑','完善当前方案的操作、画面表现和成功失败条件。'],
+      opportunities:['交互点管理','寻找交互机会，先确定定位时间、参与行为和理由，再推荐玩法。'],
+      design:['玩法推荐与选择','选择或自行设计方案，在弹窗完善并确认描述，再生成游戏。'],
       games:['游戏生成与管理','按单个玩点生成游戏，管理版本并独立试玩。'],
       arrange:['视频交互编排','选择采用版本，安排参与顺序并连续试玩。']};
     if($('wbViewTitle'))$('wbViewTitle').textContent=headings[view][0];
@@ -279,7 +326,10 @@
   function renderPoints() {
     const list=$('wbPointList');list.replaceChildren();
     if(!state.points.length)list.append(make('p','尚无项目交互点。可以先分析视频，也可以在当前播放位置人工新增。'));
-    for(const p of [...state.points].sort((a,b)=>a.time_s-b.time_s)) {
+    const visible=currentView==='design'?availableGameplayPoints():currentView==='games'?gameReadyPoints(state.points):state.points;
+    if(['design','games'].includes(currentView)&&!visible.some(p=>p.id===selectedId))selectedId=visible[0]?.id||null;
+    if(currentView==='games'&&!visible.length)list.append(make('p','尚无已选玩法，请先在第三步选择或保存方案。'));
+    for(const p of [...visible].sort((a,b)=>a.time_s-b.time_s)) {
       const card=make('article',undefined,'wb-point'+(p.id===selectedId?' selected':''));
       const version=p.versions.find(v=>v.id===p.selected)||p.versions[0];
       if(version){const img=make('img');img.loading='lazy';img.alt=`${p.time_s.toFixed(2)} 秒关联推荐画面`;
@@ -314,27 +364,52 @@
     const hint=$('wbNextHint');if(!hint)return;
     const p=state.points.find(p=>p.id===selectedId);
     const hints={analysis:!state.video?'先选择视频，再识别可观察事件。':'识别后请回看并勾选可信事件，再前往第二步。',
-      opportunities:!bridge.peek().records.events?'先在第一步识别并勾选事件。':'寻找机会后，勾选希望推荐玩法的候选点，再前往第三步。',
-      design:!state.points.length?'先在第二步寻找或人工新增交互点。':'选择推荐方案后，进入第四步完善玩法描述。',
-      edit:!p?.design?'先选择推荐方案，或点击“自行设计”创建草稿。':p.stale?'当前画面或情境已变化，请回看并核对适配性。':missingFields(p).length?`还需补充 ${missingFields(p).length} 项说明；点击确认可定位缺失字段。`:'描述已完整，可以确认并前往第五步生成游戏。',
-      games:!project?'先保存项目，再生成或管理游戏。':!verified?'先回第一步重新选择同一视频，核对后才能试玩。':'为当前点生成游戏，试玩后采用合适版本，再前往第六步编排。',
+      opportunities:!bridge.peek().records.events?'先在第一步识别并勾选事件，或在当前画面人工新增交互点。':'先在交互点设置中调整定位、参与行为和理由，再勾选候选点，前往第三步推荐玩法。',
+      design:!state.points.length?'先在第二步寻找或人工新增交互点。':'选择或自行设计方案，打开玩法描述弹窗确认后，前往第四步生成游戏。',
+      games:!project?'先保存项目，再生成或管理游戏。':!verified?'先回第一步重新选择同一视频，核对后才能试玩。':'为当前点生成游戏，试玩后采用合适版本，再前往第五步编排。',
       arrange:'先检查启用点、采用版本和时间冲突；保存成功后再开始串联。'};
     hint.textContent=hints[currentView];
   }
+  function openOptionEditor(p,version,fromDraft=false){
+    const useDraft=fromDraft||version?.id===p.selected;
+    const draft={design:clone(useDraft&&p.design?p.design:version?.design||{title:'自行设计',game_id:bridge.catalog()[0]?.id||'tap_object'}),
+      brief:clone(useDraft?p.brief||{}:version?.brief||{})};
+    const dialog=make('dialog',undefined,'wb-dialog wb-dialog-wide');dialog.setAttribute('aria-label','玩法描述编辑');
+    const head=make('div',undefined,'wb-dialog-head'),body=make('div',undefined,'wb-dialog-body');
+    let changed=false;
+    const close=()=>{if(changed&&!root.confirm('放弃本次尚未保存的玩法描述？'))return;dialog.close();dialog.remove();};
+    head.append(make('h2',version?'编辑玩法描述':'自行设计新方案'),button('关闭',close));
+    body.append(make('p',`对应交互点：${p.time_s.toFixed(2)} 秒 · ${p.opportunity}`));
+    const fields={};
+    body.append(textInput('方案名称',draft.design.title||'',v=>{draft.design.title=v;changed=true;},false));
+    body.append(selection('玩法类型',bridge.catalog().map(t=>[t.id,t.name]),draft.design.game_id,v=>{draft.design.game_id=v;changed=true;}));
+    for(const key of designFields){const field=textInput(labels[key],draft.design[key]||'',v=>{draft.design[key]=v;changed=true;});fields[key]=field.querySelector('textarea');body.append(field);}
+    const extra=make('details');extra.append(make('summary','补充画面与衔接（选填）'));
+    for(const [key,label] of Object.entries(briefLabels))extra.append(textInput(label,draft.brief[key]||'',v=>{draft.brief[key]=v;changed=true;}));
+    body.append(extra);
+    const error=make('p');error.setAttribute('role','alert');body.append(error);
+    const commit=async confirm=>{
+      if(confirm){
+        const missing=designFields.filter(k=>!draft.design[k]?.trim());
+        if(missing.length){error.textContent='请补充：'+missing.map(k=>labels[k]).join('、');fields[missing[0]].focus();return;}
+        if(p.stale||p.review!=='kept'){error.textContent='请先回看并核对交互点画面，或先保存为草稿。';return;}
+      }
+      const saved=saveOption(p,version?.id||null,draft.design,draft.brief,'manual_'+crypto.randomUUID().replaceAll('-',''));
+      version=saved;
+      if(confirm){confirmPoint(p);saved.confirmed=true;}
+      touch(true);
+      if(await save()){changed=false;close();}else error.textContent='未保存到磁盘，内容仍保留在项目草稿中，请重试保存。';
+    };
+    body.append(button('保存方案草稿',()=>commit(false)),button('保存并确认玩法描述',()=>commit(true)));
+    dialog.append(head,body);dialog.addEventListener('cancel',event=>{event.preventDefault();close();});document.body.append(dialog);dialog.showModal();
+  }
   function renderEditor() {
     const host=$('wbEditor');host.replaceChildren();const p=state.points.find(p=>p.id===selectedId);
-    if(!p){host.append(make('p','尚无交互点，请先在“寻找交互机会”中分析或新增。'));return;}
+    if(!p){host.append(make('p',currentView==='games'?'尚无可生成的已选方案，请先在第三步选择或保存玩法。':'尚无交互点，请先在“寻找交互机会”中分析或新增。'));return;}
     if(currentView==='design'){
       host.append(make('h2',`${p.time_s.toFixed(2)} 秒 · ${p.opportunity}`),make('p',p.reason));
-      const grid=make('div',undefined,'option-grid');host.append(grid);
-      if(!p.versions.length)grid.append(make('p','尚无推荐方案。点击上方“推荐小游戏”，或前往方案编辑自行设计。'));
-      p.versions.forEach(v=>{
-        const card=make('article',undefined,'option-card');
-        card.append(make('h3',v.design.title||gameName(v.design.game_id)),make('small',`${v.label} · ${gameName(v.design.game_id)}`));
-        for(const k of ['player_goal','player_action','fit'])card.append(make('p',`${labels[k]}：${v.design[k]}`));
-        card.append(button(p.selected===v.id?'当前所选':'选择此方案',()=>{choose(p,v);p.review='kept';touch(true);}));grid.append(card);
-      });
-      host.append(button('编辑玩法方案 →',()=>switchView('edit')));
+      renderOptionCards(host,p);
+      host.append(button('下一步：生成游戏 →',()=>switchView('games')));
       return;
     }
     if(currentView==='games'){
@@ -348,16 +423,27 @@
       },true);
       return;
     }
-    host.append(make('h2',`${p.time_s.toFixed(2)} 秒 · 交互点编辑`),make('p',`来源：${p.origin==='ai'?'AI 候选；编辑不改写原始记录':'人工新增，不计入模型检出结果'}`));
+    host.append(make('h2',`${p.time_s.toFixed(2)} 秒 · ${p.opportunity}`),make('p',p.reason),button('返回交互点管理',()=>switchView('opportunities',p.id)));
+    renderOptionCards(host,p);
+  }
+  function renderPointSettings(){
+    const host=$('wbPointSettingsBody');if(!host)return;host.replaceChildren();
+    const p=state.points.find(p=>p.id===selectedId);
+    if(!p){host.append(make('p','暂无交互点。先寻找机会，或在当前画面人工新增。'));return;}
+    host.append(selection('选择要编辑的交互点',state.points.map(p=>[p.id,`${p.time_s.toFixed(2)} 秒 · ${p.opportunity}`]),p.id,id=>{selectedId=id;render();}),make('p',`来源：${p.origin==='ai'?'AI 候选；修改不覆盖原始模型记录':'人工新增'}`));
+    if(p.origin==='manual'){
+      const label=make('label','送入第三步');const check=make('input');check.type='checkbox';check.checked=manualGameplaySelection.has(p);
+      check.onchange=()=>{if(check.checked)manualGameplaySelection.add(p);else manualGameplaySelection.delete(p);};label.prepend(check);host.append(label);
+    }
     const latest=bridge.peek().records.gameplay;
     const opportunities=bridge.peek().records.opportunities;
     const outputWarnings=[...(opportunities?.analysis?.warnings||[]),...(latest?.analysis?.warnings||[]),...(latest?.request_warnings||[])];
     if(outputWarnings.length){const aside=make('details',undefined,'validation-warnings');
       aside.append(make('summary',`查看 ${outputWarnings.length} 项分析警告`));
       outputWarnings.forEach(w=>aside.append(make('p',w.message)));host.append(aside);}
-    const contextGroup=editorGroup(p,'context','定位与交互点设置');host.append(contextGroup);
+    const contextGroup=make('section');contextGroup.append(make('h3','定位与交互点设置'));host.append(contextGroup);
     const time=textInput('定位时间（秒）',String(p.time_s),()=>{},false);const timeBox=time.querySelector('input');timeBox.type='number';timeBox.step='0.1';
-    timeBox.onchange=()=>{try{change(p,{time_s:checkTime(timeBox.value)});touch(true);}catch(e){message(e.message,true);timeBox.value=p.time_s;}};
+    timeBox.onchange=()=>{try{change(p,{time_s:checkTime(timeBox.value)});bridge.setPointTime?.(p.point_id,p.source_record_id,p.time_s);touch(true);}catch(e){message(e.message,true);timeBox.value=p.time_s;}};
     contextGroup.append(time,button('回看前后 2 秒',()=>{seek(Math.max(0,p.time_s-2));bridge.previewEnd(Math.min(duration(),p.time_s+2));}),
       textInput('玩家可以参与什么',p.opportunity,v=>{change(p,{opportunity:v});touch();}),
       textInput('为什么适合（人工备注与原始理由分开保存）',p.reason,v=>{change(p,{reason:v});touch();}));
@@ -367,14 +453,18 @@
     if(targets.length){const sel=selection('合并到其他点（保留本点来源，不自动搬移方案）',[['','请选择'],...targets.map(x=>[x.id,`${x.time_s.toFixed(2)} 秒 · ${x.opportunity}`])],'',v=>{
       if(v){merge(state,p,state.points.find(x=>x.id===v));touch(true);}
     });contextGroup.append(sel);}
-    const alternatives=make('details');alternatives.append(make('summary','切换推荐方案（不会覆盖历史版本）'));host.append(alternatives);
+    if(p.stale)host.append(make('p','定位或情境已改变，已有方案和游戏需要重新核对。'),button('已回看当前画面，确认适配',()=>{if(!verified)throw Error('请先选择原视频并回看');p.stale=false;p.confirmed=false;touch(true);}));
+    host.append(button('下一步：推荐与选择玩法 →',commitGameplaySelection));
+  }
+  function renderOptionCards(host,p){
+    const alternatives=make('section');alternatives.append(make('h3','玩法方案'),make('p','每个方案有独立描述。选择用于当前交互点的方案，或打开弹窗编辑。'));host.append(alternatives);
     const grid=make('div',undefined,'option-grid');alternatives.append(grid);
     if(!p.versions.length)grid.append(make('p','尚无可比较的推荐。可运行原有第三步，或自行设计。历史无 option_id 的方案在兼容编辑器中查看。'));
     p.versions.forEach(v=>{const card=make('article',undefined,'option-card');
       card.append(make('h3',v.design.title||gameName(v.design.game_id)),make('small',`${v.label} · 画面 ${v.time_s.toFixed(2)} 秒`));
       for(const k of ['player_goal','player_action','fit'])card.append(make('p',`${labels[k]}：${v.design[k]}`));
-      card.append(button(p.selected===v.id?'当前所选':'选择此版本',()=>{choose(p,v);p.review='kept';touch(true);}));grid.append(card);});
-    if(p.origin==='ai')host.append(button('仅重新推荐此点（计费，需确认）',async()=>{
+      card.append(button(p.selected===v.id?'当前所选':'选择此版本',()=>{choose(p,v);p.review='kept';touch(true);}),button('查看／编辑玩法描述',()=>openOptionEditor(p,v)),button('删除方案',()=>deleteRecommendation(p,v)));grid.append(card);});
+    if(currentView==='design'&&p.origin==='ai')host.append(button('仅重新推荐此点（计费，需确认）',async()=>{
       if(!verified)throw Error('请先选择与项目匹配的视频');
       if(p.source_record_id!==bridge.peek().records.opportunities?.record_id)throw Error('该点不在当前分析批次，请先打开其对应项目工作状态；旧方案不会丢失');
       const confirmation=make('aside',undefined,'validation-warnings');
@@ -385,43 +475,10 @@
         }),
         button('取消重新推荐',()=>confirmation.remove()));host.append(confirmation);
     }));
-    const draftToggle=button('自行设计 / 从当前草稿继续',()=>toggleDraftEditor(p));
-    draftToggle.setAttribute('aria-expanded',String(!!p.design&&!collapsedDraftEditors.has(p)));
-    draftToggle.setAttribute('aria-controls','wbDraftEditor');host.append(draftToggle);
-    if(p.design&&!collapsedDraftEditors.has(p)){
-      const section=make('section',undefined,'wb-description');section.id='wbDraftEditor';section.append(make('h3','玩法描述'));
-      const core=editorGroup(p,'core','核心玩法',true),rules=editorGroup(p,'rules','画面、判定与反馈'),other=editorGroup(p,'other','选择理由');
-      section.append(core,rules,other);const fields={};
-      core.append(textInput('方案名称',p.design.title,v=>{change(p,{design:{...p.design,title:v}});touch();},false));
-      core.append(selection('玩法类型',bridge.catalog().map(t=>[t.id,t.name]),p.design.game_id,v=>{
-        change(p,{design:{...p.design,game_id:v}});p.brief={};touch(true);
-      }));
-      for(const k of designFields){
-        const field=textInput(labels[k],p.design[k],v=>{change(p,{design:{...p.design,[k]:v}});fields['design.'+k].removeAttribute('aria-invalid');touch();});
-        fields['design.'+k]=field.querySelector('textarea');(['fit','player_goal','player_action'].includes(k)?core:rules).append(field);
-      }
-      for(const [k,label] of Object.entries(briefLabels)){
-        const field=textInput(label+'（选填）',p.brief[k],v=>{p.brief[k]=v;p.confirmed=false;fields['brief.'+k].removeAttribute('aria-invalid');touch();});
-        fields['brief.'+k]=field.querySelector('textarea');rules.append(field);
-      }
-      if(p.stale)section.append(button('已回看当前画面，确认人工草稿适配',()=>{
-        if(!verified)throw Error('请先选择原视频并回看');p.stale=false;p.selected=null;p.confirmed=false;touch(true);
-      }));
-      other.append(textInput('选择、修改或放弃的理由',p.decision_reason,v=>{p.decision_reason=v;touch();}));
-      const editingState=make('p',status(p));editingState.id='wbEditingState';
-      const missingNote=make('p');missingNote.setAttribute('role','alert');
-      section.append(button('确认玩法描述',()=>{
-        const missing=missingFields(p);
-        if(missing.length){
-          missingNote.textContent='请补充：'+missing.map(([, ,label])=>label).join('、');
-          for(const [group,key] of missing){const field=fields[group+'.'+key];field.setAttribute('aria-invalid','true');field.closest('details').open=true;}
-          fields[missing[0][0]+'.'+missing[0][1]].focus();return;
-        }
-        confirmPoint(p);touch(true);
-      }),missingNote,editingState);
-      host.append(section);
-      section.append(button('前往游戏生成与管理 →',()=>switchView('games')));
-    }
+    host.append(button('自行设计新方案',()=>openOptionEditor(p,null)),button('前往游戏生成与管理 →',()=>switchView('games')));
+    if(p.design&&!p.selected)host.append(button('将现有草稿另存为新方案',()=>openOptionEditor(p,null,true)));
+    if(p.stale)host.append(make('p','交互点已变化，请返回第二步回看并核对适配性。'),button('回到交互点管理核对',()=>switchView('opportunities',p.id)));
+    host.append(textInput('选择或修改理由',p.decision_reason,v=>{p.decision_reason=v;touch();}));
   }
   function gameName(id) {return bridge.catalog().find(t=>t.id===id)?.name||id;}
   function renderArrangement() {
@@ -459,7 +516,7 @@
     if(!state.points.some(p=>p.id===selectedId))selectedId=state.points[0]?.id||null;
     if(root.GameWorkbench)root.GameWorkbench.sync();
     renderProgress();
-    renderTimeline();renderPoints();if(['design','edit','games'].includes(currentView))renderEditor();if(currentView==='arrange')renderArrangement();
+    renderTimeline();renderPoints();if(currentView==='opportunities')renderPointSettings();if(['design','games'].includes(currentView))renderEditor();if(currentView==='arrange')renderArrangement();
     $('wbMediaHint').textContent=state.video?`${state.video.name} · ${verified?'视频已匹配':'需重新选择同一视频'} · 原始模型结果不受本地编辑影响`:'未绑定视频';
     const locked=bridge.isBusy()||loading;for(const id of ['newProject','openProject','projectList','saveProject','saveProjectCopy','projectName'])$(id).disabled=locked;
     $('deleteProject').disabled=locked||saving||!project;
@@ -489,10 +546,10 @@
     $('addManualPoint').onclick=()=>{try{
       if(!verified||!duration())throw Error('先选择并核对可播放的视频');
       const p=point('manual_'+crypto.randomUUID().replaceAll('-',''),checkTime(bridge.time()),'请填写玩家可参与的行为','请填写与当前画面的关系');
-      state.points.push(p);selectedId=p.id;touch();switchView('edit');
+      state.points.push(p);selectedId=p.id;touch();switchView('opportunities');
     }catch(e){message(e.message,true);}};
     document.querySelectorAll('[data-wb-tab]').forEach(b=>b.onclick=()=>switchView(b.dataset.wbTab));
-    document.querySelectorAll('[data-wb-go]').forEach(b=>b.onclick=()=>switchView(b.dataset.wbGo));
+    document.querySelectorAll('[data-wb-go]').forEach(b=>b.onclick=()=>b.dataset.wbGo==='design'&&currentView==='opportunities'?commitGameplaySelection():switchView(b.dataset.wbGo));
     for(const id of ['sample','file']){
       const original=$(id).onchange;
       $(id).onchange=async function(event){
@@ -507,5 +564,6 @@
     root.addEventListener('beforeunload',event=>{if(dirty||saving){event.preventDefault();event.returnValue='';}});
     switchView('analysis');refreshList();message('项目工作台已就绪；分析与推荐策略保持不变');
   }
-  root.Workbench={init,navigate:switchView,notify,mediaReady:()=>verified,sourceChanged:verifySource};
+  root.Workbench={init,navigate:switchView,notify,mediaReady:()=>verified,sourceChanged:verifySource,
+    gameplayPointIds:()=>availableGameplayPoints().filter(p=>p.source_record_id===bridge.peek().session.opportunities).map(p=>p.point_id)};
 })(typeof window==='undefined'?globalThis:window);

@@ -14,7 +14,11 @@ temporary = tempfile.TemporaryDirectory(prefix='game-workbench-browser-')
 app.ROOT = Path(temporary.name)
 shutil.copytree(original_root / 'prompts/game-generation', app.ROOT / 'prompts/game-generation')
 (app.ROOT / 'mp4-example').mkdir()
-shutil.copyfile(original_root / 'mp4-example/S05_传球投篮.mp4', app.ROOT / 'mp4-example/sample.mp4')
+sample_source=original_root / 'mp4-example/S05_传球投篮.mp4'
+if sample_source.is_file():
+    shutil.copyfile(sample_source, app.ROOT / 'mp4-example/sample.mp4')
+else:
+    print('No sample video: task UI checks only; playback is unavailable.', flush=True)
 point = {'id': 'fixture_point', 'origin': 'manual', 'time_s': 1, 'opportunity': '本地夹具：持物操作',
          'reason': '本地协议测试，不是真实分析', 'review': 'kept', 'enabled': True, 'versions': [], 'selected': None,
          'design': {'title': '本地夹具：点击与按住', 'game_id': 'hold_release',
@@ -25,6 +29,9 @@ project = app.projects.Store(app.ROOT / 'projects').save({'state': state})
 
 
 def fake_model(request, timeout):
+    if '--slow' in sys.argv:
+        import threading
+        threading.Event().wait(8)  # Simulated latency, never a real model request.
     body = json.loads(request.data)
     data = {'design': {**{k: '夹具设计，不代表模型效果' for k in generation.DESIGN_FIELDS}, 'timeout_s': 8},
             'javascript': """function mount(c,a){

@@ -327,6 +327,9 @@ def summarize_event_segments(record, complete=False):
     warnings = [{**warning, 'core_start_s': item['core_start_s'], 'core_end_s': item['core_end_s']}
                 for item in successful for warning in item.get('validation_warnings', [])]
     record['validation_warnings'] = warnings
+    record['event_validation_summary'] = {
+        key: sum(item['analysis'].get('validation_summary', {}).get(key, 0) for item in successful)
+        for key in ('returned_count', 'accepted_count', 'rejected_count')}
     if not complete:
         limitations.insert(0, '仅展示已通过校验的片段，不代表全片分析成功；不能直接用于第二步。')
     if successful:

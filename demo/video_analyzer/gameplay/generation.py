@@ -98,7 +98,7 @@ def resolve_node():
 
 
 @settings.scoped(lambda root, *a, **kw: (root, None))
-def generate(root, payload, opener=None):
+def generate(root, payload, opener=None, progress=None, _reserved=False):
     opener = opener or urlopen
     if type(payload.get('revision')) is not int:
         raise ValueError('必须提供当前项目修订 revision。')
@@ -120,7 +120,7 @@ def generate(root, payload, opener=None):
     active_key = (project['project_id'], data['point_id'])
     with LOCK:
         project, data, digest = snapshot(root, payload.get('project_id'), payload.get('point_id'), payload['revision'])
-        if active_key in ACTIVE:
+        if active_key in ACTIVE and not _reserved:
             raise Conflict('该玩点正在生成，请勿重复提交。')
         ACTIVE.add(active_key)
     record = {'record_id': secrets.token_hex(16), 'stage': 'game_generation', 'status': 'failed',
@@ -129,7 +129,10 @@ def generate(root, payload, opener=None):
               'parent_record_id': parent['record_id'] if parent else None, 'problem': problem,
               'model': settings.get('MINIMAX_MODEL', 'MiniMax-M3.1-Flash'), 'model_call_made': False}
     try:
-        prompt_path = Path(root) / 'prompts/game-generation/v1' / ('repair.txt' if parent else 'generate.txt')
+        prompt_name = 'repair.txt' if parent else 'generate.txt'
+        prompt_path = Path(root) / 'prompts/game-generation/v2' / prompt_name
+        if not prompt_path.is_file():  # Older local installations and fixtures retain v1 compatibility.
+            prompt_path = Path(root) / 'prompts/game-generation/v1' / prompt_name
         prompt = prompt_path.read_text(encoding='utf-8')
         record.update(prompt_file=prompt_path.relative_to(root).as_posix(), prompt=prompt)
         request_input = {'single_point': data}
@@ -144,10 +147,14 @@ def generate(root, payload, opener=None):
             raise ValueError('MiniMax 接口必须使用 HTTPS。')
         record['endpoint'] = base + '/chat/completions'
         record['model_call_made'] = True
+        if progress:
+            progress('waiting_model', record['record_id'])
         with opener(Request(record['endpoint'], data=json.dumps(body).encode(),
                             headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key}), timeout=300) as response:
             raw = json.load(response)
         record.update(raw_response=raw, usage=raw.get('usage', {}))
+        if progress:
+            progress('checking', record['record_id'])
         choice = raw['choices'][0]
         record.update(raw_text=choice['message'].get('content', ''), finish_reason=choice.get('finish_reason'))
         if record['finish_reason'] != 'stop':
@@ -166,10 +173,13 @@ def generate(root, payload, opener=None):
         record['error'] = str(error).replace(key, '[REDACTED]')[:4000]
     finally:
         try:
+            if progress:
+                progress('saving', record['record_id'])
             write(root, record)
         finally:
             with LOCK:
-                ACTIVE.discard(active_key)
+                if not _reserved:
+                    ACTIVE.discard(active_key)
     return record
 
 

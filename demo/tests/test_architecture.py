@@ -42,7 +42,7 @@ class ArchitectureChecks(MockModelTestCase):
                                 capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
 
-    def test_six_view_navigation_without_inference(self):
+    def test_five_view_navigation_without_inference(self):
         node = shutil.which('node')
         if not node:
             self.skipTest('Node.js not available')
@@ -135,5 +135,12 @@ class ArchitectureChecks(MockModelTestCase):
             with urlopen(base+'/config',timeout=3) as response:
                 config=json.load(response)
             self.assertIn('stage_prompts',config)
+            versions = config['game_generation_prompts']
+            self.assertEqual([item['version'] for item in versions], ['v1', 'v2'])
+            for item in versions:
+                self.assertEqual(len(item['files']), 2)
+                for file in item['files']:
+                    self.assertEqual(file['content'], (ROOT/file['path']).read_text(encoding='utf-8').strip())
+                    self.assertEqual(file['active'], item['version'] == 'v2')
         finally:
             server.shutdown();server.server_close();worker.join()

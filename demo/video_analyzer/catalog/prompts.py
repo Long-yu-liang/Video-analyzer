@@ -66,6 +66,23 @@ def stage_prompt_catalog(root):
     return catalog
 
 
+def game_generation_catalog(root):
+    """Read-only generation/repair prompt versions; does not change runtime selection."""
+    folder = root / 'prompts/game-generation'
+    result = []
+    for version in ('v1', 'v2'):
+        files = []
+        for name, label in (('generate.txt', '生成游戏'), ('repair.txt', '修复游戏')):
+            path = folder / version / name
+            if path.is_file():
+                active = 'v2' if (folder / 'v2' / name).is_file() else 'v1'
+                files.append({'label': label, 'path': path.relative_to(root).as_posix(),
+                              'content': path.read_text(encoding='utf-8').strip(), 'active': version == active})
+        if files:
+            result.append({'version': version, 'files': files})
+    return result
+
+
 def load_game_catalog(root, game_ids):
     path = root / 'prompts' / 'games' / 'catalog.json'
     catalog = json.loads(path.read_text(encoding='utf-8'))
