@@ -29,7 +29,9 @@ assert.match(html, /id="eventResults"[\s\S]*id="events"[\s\S]*id="analysisResult
 assert.equal((html.match(/id="suggest"/g) || []).length, 1);
 assert.match(html, /id="analysisResults"[\s\S]*id="suggest"/);
 assert.equal((html.match(/id="recommend"/g) || []).length, 1);
-assert.ok(html.includes('<details class="prompts">'), 'prompt text should start collapsed');
+assert.ok(html.includes('id="promptDialog"') && !html.includes('id="promptDialog" open'), 'prompt settings stay in a closed dialog');
+assert.ok(html.includes('id="tokenDialog"') && !html.includes('id="tokenDialog" open'), 'token usage stays in a closed dialog');
+assert.ok(!html.includes('导入已有分析结果') && !html.includes('id="importRecord"'), 'analysis import is removed');
 const draft={design:{title:'已填方案',player_action:'已编辑操作'},brief:{rules:'已填规则'},selected:'original',confirmed:true};
 const before=JSON.stringify(draft);
 context.navigationTest.toggle(draft);assert.equal(context.navigationTest.collapsed(draft),true);

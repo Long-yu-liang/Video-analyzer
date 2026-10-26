@@ -137,7 +137,7 @@
       project=value;dirty=JSON.stringify(state)!==snapshot;
       message(dirty?'保存后又有新修改…':`已保存 · 修订 ${value.revision}`);
       refreshList();return !dirty;
-    } catch(error) {dirty=true;message(`${error.message}（未保存；可重试保存或导出本地草稿备份）`,true);return false;}
+    } catch(error) {dirty=true;message(`${error.message}（未保存；可重试保存或在项目管理中导出草稿备份）`,true);return false;}
     finally {saving=false;if(saveAgain){saveAgain=false;if(dirty)timer=setTimeout(()=>save(),100);}render();}
   }
   async function flush() {
@@ -258,36 +258,6 @@
       await refreshList();$('projectList').value='';
       message('项目已删除并移入 projects/.trash，可手动恢复；原视频和模型结果未删除');
     }finally{loading=false;render();bridge.ready();}
-  }
-  async function importResult(file) {
-    if(!file)return;await flush();if(bridge.isBusy())throw Error('模型调用期间不能导入记录');
-    if(file.size>32*1024*1024)throw Error('记录文件超过 32 MiB，请选择较新的独立图片记录');
-    const chosen=JSON.parse(await file.text());
-    if(chosen.purpose==='unsaved_draft_backup'&&chosen.state){
-      const value=await api('/projects',{state:chosen.state});await refreshList();await openProject(value.project_id);
-      message('备份已恢复为独立项目，不覆盖原项目');return;
-    }
-    if(!/^[a-f0-9]{32}$/.test(chosen.record_id||''))throw Error('文件缺少合法 record_id');
-    const records={};let current=await api('/project-record?record_id='+chosen.record_id);
-    const hash=current.video_sha256;const visited=new Set();
-    while(current){
-      if(!['events','opportunities','gameplay'].includes(current.stage)||current.status!=='success')throw Error('只支持成功的三阶段原始分析记录');
-      if(visited.has(current.record_id)||current.video_sha256!==hash)throw Error('记录关联循环或视频不一致');
-      visited.add(current.record_id);records[current.stage]=current;
-      if(current.stage==='events')break;
-      current=await api('/project-record?record_id='+current.parent_record_id);
-    }
-    if(state.video&&state.video.sha256!==hash)throw Error('历史结果属于其他视频，请先新建项目');
-    const basis=records.events||Object.values(records)[0];const name=basis.video_name;
-    const video=state.video||{name,sha256:hash,sample:bridge.samples().includes(name)?name:'',duration_s:basis.metadata.duration_s};
-    const session={settings:bridge.peek().session.settings,events:records.events?.record_id||null,
-      opportunities:records.opportunities?.record_id||null,gameplay:records.gameplay?.record_id||null,reviews:[],controls:[],drafts:[]};
-    loading=true;
-    try{state.video=video;ingest(state,records);state.session=session;
-      bridge.restore(session,records,video,verified);selectedId=state.points[0]?.id||null;
-    }finally{loading=false;}
-    touch();render();message('历史结果已导入为项目草稿，原始文件未修改；未调用模型');
-    if(bridge.source().sample)await verifySource();else bridge.ready();
   }
   function textInput(label,value,action,multiline=true) {
     const wrap=make('label',label);const input=make(multiline?'textarea':'input');input.value=value||'';
@@ -477,7 +447,7 @@
     host.append(button('导出全部草稿',()=>download(false)),button('导出已确认且启用方案',()=>download(true)));
   }
   async function download(ready) {
-    if(!await save()&&dirty)throw Error('先成功保存项目，再导出确认集合；可使用顶部草稿备份');
+    if(!await save()&&dirty)throw Error('先成功保存项目，再导出确认集合；可在项目管理中导出草稿备份');
     if(!project)throw Error('请先保存项目');
     const value=await api(`/project-export?id=${project.project_id}&ready=${ready?1:0}`);
     downloadJSON(value,`${state.name}-${ready?'已确认方案':'全部草稿'}.json`);
@@ -512,7 +482,10 @@
     $('openProject').onclick=()=>openProject($('projectList').value).catch(e=>message(e.message,true));
     $('deleteProject').onclick=()=>deleteProject().catch(e=>message(e.message,true));
     $('backupProject').onclick=()=>downloadJSON({purpose:'unsaved_draft_backup',state},`${state.name}-本地草稿备份.json`);
-    $('importRecord').onchange=async()=>{try{await importResult($('importRecord').files[0]);}catch(e){message(e.message,true);}finally{$('importRecord').value='';}};
+    for(const [openId,dialogId,closeId] of [['openProjectMenu','projectDialog','closeProjectDialog'],['openTokenDialog','tokenDialog','closeTokenDialog'],['openPromptDialog','promptDialog','closePromptDialog']]){
+      $(openId).onclick=()=>{const dialog=$(dialogId);if(!dialog.open)dialog.showModal();};
+      $(closeId).onclick=()=>$(dialogId).close();
+    }
     $('addManualPoint').onclick=()=>{try{
       if(!verified||!duration())throw Error('先选择并核对可播放的视频');
       const p=point('manual_'+crypto.randomUUID().replaceAll('-',''),checkTime(bridge.time()),'请填写玩家可参与的行为','请填写与当前画面的关系');

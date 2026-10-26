@@ -2,7 +2,7 @@
 <link rel="stylesheet" href="/assets/css/base.css">
 <link rel="stylesheet" href="/assets/css/workbench.css">
 <link rel="stylesheet" href="/assets/css/settings-panel.css">
-<header class="app-toolbar"><div><small>VIDEO ANALYZER</small><h1>视频交互工作台</h1><p>找到参与位置，选择玩法，再生成游戏并串联试玩。</p></div><button id="openSettings" type="button" class="ghost">设置</button></header>
+<header class="app-toolbar"><div><small>VIDEO ANALYZER</small><h1>视频交互工作台</h1><p>找到参与位置，选择玩法，再生成游戏并串联试玩。</p></div><div class="app-toolbar-actions"><button id="openProjectMenu" type="button" class="ghost">项目管理</button><button id="openTokenDialog" type="button" class="ghost">Token 用量</button><button id="openPromptDialog" type="button" class="ghost">提示词设置</button><button id="openSettings" type="button" class="ghost">设置</button></div></header>
 <dialog id="settingsDialog" class="settings-dialog" aria-labelledby="settingsTitle"><div class="settings-layout">
   <div class="settings-header"><h2 id="settingsTitle">工作台设置</h2><button id="closeSettings" class="ghost" type="button" aria-label="关闭设置">关闭</button></div>
   <div class="settings-scroll"><nav id="settingsTabs" class="settings-tabs" aria-label="设置分类"></nav><div id="settingsBody"></div>
@@ -13,38 +13,54 @@
   </div>
   <div class="settings-footer"><p id="settingsStatus" role="status" aria-live="polite">正在读取本机设置…</p><button id="settingsSave" type="button">保存设置</button><button id="settingsReload" class="ghost" type="button">重新读取</button></div>
 </div></dialog>
-<div class="wb-project-bar">
-  <div class="wb-project-tools"><label>项目名称<input id="projectName" maxlength="120" aria-label="项目名称"></label>
-    <button id="saveProject" type="button">保存项目</button><details class="wb-project-menu"><summary>项目管理</summary><button id="saveProjectCopy" type="button" class="ghost">另存副本</button><button id="newProject" type="button" class="ghost">新建项目</button>
-    <select id="projectList" aria-label="已保存项目"></select><button id="openProject" type="button" class="ghost">打开项目</button><button id="deleteProject" type="button" class="ghost" disabled>删除当前项目</button>
-    <button id="backupProject" type="button" class="ghost">草稿备份</button></details></div>
-  <details><summary>导入已有分析结果 / 恢复草稿备份（不调用模型）</summary><label>选择原始分析 JSON 或本工作台的草稿备份<input id="importRecord" type="file" accept="application/json,.json"></label></details>
-  <p id="projectStatus" role="status" aria-live="polite"></p><p id="wbMediaHint"></p>
-  <p class="wb-video-required">必须要有视频，否则无法正常运行</p>
+<div class="wb-topbar">
+  <nav class="wb-tabs" aria-label="工作台视图">
+    <button type="button" class="ghost" data-wb-tab="analysis">1. 视频分析</button>
+    <button type="button" class="ghost" data-wb-tab="opportunities">2. 寻找交互机会</button>
+    <button type="button" class="ghost" data-wb-tab="design">3. 玩法推荐与选择</button>
+    <button type="button" class="ghost" data-wb-tab="edit">4. 玩法方案编辑</button>
+    <button type="button" class="ghost" data-wb-tab="games">5. 游戏生成与管理</button>
+    <button type="button" class="ghost" data-wb-tab="arrange">6. 视频交互编排</button>
+  </nav>
 </div>
+<p class="wb-status-line"><span id="projectStatus" role="status" aria-live="polite"></span><span id="wbMediaHint"></span><span class="wb-video-required">必须要有视频，否则无法正常运行</span></p>
+<dialog id="projectDialog" class="wb-dialog" aria-labelledby="projectDialogTitle">
+  <div class="wb-dialog-head"><h2 id="projectDialogTitle">项目管理</h2><button id="closeProjectDialog" type="button" class="ghost">关闭</button></div>
+  <div class="wb-project-tools">
+    <label>项目名称<input id="projectName" maxlength="120" aria-label="项目名称"></label>
+    <div class="wb-project-actions">
+      <button id="saveProject" type="button">保存项目</button>
+      <button id="saveProjectCopy" type="button" class="ghost">另存副本</button>
+      <button id="newProject" type="button" class="ghost">新建项目</button>
+      <button id="backupProject" type="button" class="ghost">草稿备份</button>
+    </div>
+    <label>已保存项目<select id="projectList" aria-label="已保存项目"></select></label>
+    <div class="wb-project-actions">
+      <button id="openProject" type="button" class="ghost">打开项目</button>
+      <button id="deleteProject" type="button" class="ghost" disabled>删除当前项目</button>
+    </div>
+  </div>
+</dialog>
+<dialog id="tokenDialog" class="wb-dialog" aria-labelledby="tokenDialogTitle">
+  <div class="wb-dialog-head"><h2 id="tokenDialogTitle">Token 用量 · 最近阶段记录</h2><button id="closeTokenDialog" type="button" class="ghost">关闭</button></div>
+  <p>调用完成后显示接口返回值；未返回不等于 0。这里只显示最近记录，不是项目累计账单，也不估算费用。</p>
+  <div id="tokenUsage"></div>
+</dialog>
+<dialog id="promptDialog" class="wb-dialog wb-dialog-wide" aria-labelledby="promptDialogTitle">
+  <div class="wb-dialog-head"><h2 id="promptDialogTitle">模型提示词与分析设置</h2><button id="closePromptDialog" type="button" class="ghost">关闭</button></div>
+  <div class="prompt-grid">
+    <div><label for="eventPrompt">事件识别</label><select id="eventPrompt"></select></div>
+    <div><label for="opportunityPrompt">机会发现</label><select id="opportunityPrompt"></select></div>
+    <div><label for="gameplayPrompt">玩法推荐</label><select id="gameplayPrompt"></select></div>
+  </div>
+  <p class="note" id="flowHint">第一步使用所选模型、输入方式和采样率。事件识别选 v14 时，超过 25 秒会分段。</p>
+  <details id="promptDetails"><summary>查看所选提示词全文</summary><div id="promptPreview"></div></details>
+</dialog>
 <div class="wb-shell">
-<nav class="wb-tabs" aria-label="工作台视图">
-  <button type="button" class="ghost" data-wb-tab="analysis">1. 视频分析</button>
-  <button type="button" class="ghost" data-wb-tab="opportunities">2. 寻找交互机会</button>
-  <button type="button" class="ghost" data-wb-tab="design">3. 玩法推荐与选择</button>
-  <button type="button" class="ghost" data-wb-tab="edit">4. 玩法方案编辑</button>
-  <button type="button" class="ghost" data-wb-tab="games">5. 游戏生成与管理</button>
-  <button type="button" class="ghost" data-wb-tab="arrange">6. 视频交互编排</button>
-</nav>
 <div class="wb-content">
 <div class="wb-view-heading"><h2 id="wbViewTitle">视频分析</h2><p id="wbViewHint">识别可观察事件，回看画面并排除失实描述。</p></div>
 <p id="wbNextHint" class="wb-next-hint" role="status" aria-live="polite"></p>
 <div class="note" id="configState">正在检查配置…</div>
-<details id="tokenUsagePanel" open><summary>Token 用量 · 最近阶段记录</summary><p>调用完成后显示接口返回值；未返回不等于 0。这里只显示最近记录，不是项目累计账单，也不估算费用。</p><div id="tokenUsage"></div></details>
-<details class="prompts"><summary>模型提示词与分析设置</summary>
-<div class="prompt-grid">
-<div><label for="eventPrompt">事件识别</label><select id="eventPrompt"></select></div>
-<div><label for="opportunityPrompt">机会发现</label><select id="opportunityPrompt"></select></div>
-<div><label for="gameplayPrompt">玩法推荐</label><select id="gameplayPrompt"></select></div>
-</div>
-<p class="note" id="flowHint">第一步使用所选模型、输入方式和采样率。事件识别选 v14 时，超过 25 秒会分段。</p>
-<details id="promptDetails"><summary>查看所选提示词全文</summary><div id="promptPreview"></div></details>
-</details>
 <main class="grid"><section id="inputPanel"><h2>视频回看</h2><div class="wb-media-source">
 <label for="sample">mp4-example</label><select id="sample"></select>
 <label for="file">或上传其他 MP4 · 最长 60 秒 / 12 MiB</label><input id="file" type="file" accept="video/mp4">

@@ -1,32 +1,38 @@
 /* Navigation and presentation only; inference controls and defaults are unchanged. */
 body{max-width:1600px;margin-top:24px}
 header{padding-top:16px}header h1{font-size:28px}header p{margin-bottom:12px}
-.wb-project-bar{margin:16px 0;padding:14px 20px;background:#fffefb;border:1px solid #d9dfd6;border-radius:12px}
-.wb-project-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.wb-project-tools label{margin:0;flex:1;min-width:180px;max-width:440px}.wb-project-tools label input{width:100%}
-.wb-project-tools button{margin:0}.wb-project-menu{position:relative}
-.wb-project-menu[open]{display:flex;flex-wrap:wrap;gap:8px}.wb-project-menu summary{cursor:pointer;padding:10px}
-.wb-project-menu select{max-width:280px}.wb-project-bar>details{margin-top:12px}
-.wb-project-bar p{margin:6px 0;font-size:13px}.wb-error{color:#a23428}
-.wb-project-bar .wb-video-required{color:#a64a2f;font-weight:600;text-align:right}
-.wb-shell{display:grid;grid-template-columns:210px minmax(0,1fr);gap:24px;align-items:start}
-.wb-tabs{position:sticky;top:16px;display:flex;flex-direction:column;gap:10px;padding:12px;background:#fffefb;border:1px solid #d9dfd6;border-radius:12px}
-.wb-tabs button{margin:0;text-align:left;padding:13px 10px}
-.wb-tabs button small{display:block;letter-spacing:0;font-size:11px;color:#647269;margin-top:6px}.wb-tabs button[aria-current=step] small{color:#dce9da}
+.wb-topbar{position:sticky;top:0;z-index:20;margin:8px 0;padding:8px 0;background:#eeede7}
+.wb-tabs{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.wb-tabs button{margin:0;flex:1 1 132px;padding:6px 8px;font-size:13px;line-height:1.35;text-align:center}
+.wb-tabs button small{display:block;margin-top:2px;letter-spacing:0;font-size:11px;color:#647269}
+.wb-tabs button[aria-current=step]{background:#23362f;color:white}
+.wb-tabs button[aria-current=step] small{color:#dce9da}
+.wb-status-line{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;margin:0 0 12px;font-size:12px;color:#647269}
+.wb-status-line .wb-video-required{margin-left:auto;color:#a64a2f;font-weight:600}
+.wb-error{color:#a23428}
+.wb-dialog{width:min(480px,calc(100vw - 32px));max-height:90vh;padding:0;border:1px solid #ccd4ca;border-radius:14px;color:inherit;background:#fffefb}
+.wb-dialog::backdrop{background:rgba(15,30,25,.45)}
+.wb-dialog-wide{width:min(960px,calc(100vw - 32px))}
+.wb-dialog-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;background:#f6f7f2}
+.wb-dialog-head h2{margin:0;font-size:18px}.wb-dialog-head button{margin:0}
+.wb-project-tools{display:flex;flex-direction:column;gap:8px;padding:14px 16px 16px}
+.wb-project-tools label{margin:0}.wb-project-tools input,.wb-project-tools select{width:100%}
+.wb-project-actions{display:flex;flex-wrap:wrap;gap:8px}.wb-project-actions button{margin:0}
+.wb-dialog p{margin:0;padding:0 16px 12px;font-size:13px}
+#tokenDialog .token-usage-row{margin:0 16px}
+.wb-shell{display:block}
 .wb-next-hint{border-left:3px solid #8ca887;padding:8px 12px;margin:8px 0;background:#f1f4ed;font-size:13px}
 .wb-editor-group{border-bottom:1px solid #d9dfd6;padding:12px 0}.wb-editor-group>summary{font-weight:600}
 #wbEditor [aria-invalid=true]{border:2px solid #b44838;background:#fff8f4}
-.wb-tabs button[aria-current=step]{background:#23362f;color:white;box-shadow:inset 3px 0 #c9b078}
 .wb-content,.wb-content>*{min-width:0}.wb-view-heading h2{margin:0}.wb-view-heading p{margin:6px 0 12px}
-#tokenUsagePanel{margin:12px 0;padding:12px 16px;border:1px solid #d9dfd6;border-radius:8px;background:#fffefb}
-#tokenUsagePanel p{font-size:12px;margin:8px 0}.token-usage-row{padding:8px 0;border-top:1px solid #e4e8e1;overflow-wrap:anywhere}
+.token-usage-row{padding:8px 0;border-top:1px solid #e4e8e1;overflow-wrap:anywhere}
 .token-usage-row strong{display:inline-block;margin-right:14px}.token-usage-row span{font-size:14px}
 .token-usage-row small{display:block;letter-spacing:0;color:#647269;font-size:12px;margin-top:4px}
 .token-usage-row details{font-size:12px;margin-top:6px}
-.prompts{margin-top:12px;padding:12px 16px;border:1px solid #d9dfd6;border-radius:8px;background:#fffefb}
+#promptDialog .prompt-grid,#promptDialog .note,#promptDialog details{margin:0 16px 12px}
 summary{cursor:pointer}.grid{margin-top:16px;grid-template-columns:300px minmax(0,1fr);gap:18px}
 main.grid>*,.wb-grid>*{min-width:0}main.grid>section{padding:20px}
-#inputPanel{grid-column:1;grid-row:1/6;align-self:start;position:sticky;top:16px;max-height:calc(100dvh - 32px);overflow:auto}
+#inputPanel{grid-column:1;grid-row:1/6;align-self:start;position:sticky;top:72px;max-height:calc(100dvh - 88px);overflow:auto}
 #inputPanel video{max-height:300px}.wb-player-preview summary{font-size:13px;color:#647269}
 #eventResults,#analysisResults,#wbTimelinePanel,#wbDesign,#wbArrange,#legacyGameplayPanel,#wbRecordsPanel,#wbRecommendationActions,#gameWorkbenchPanel{grid-column:2}
 #wbTimelinePanel{padding:12px 20px}#wbTimelinePanel h2{margin-top:0}
@@ -54,15 +60,15 @@ body:not([data-workbench-view=analysis]) #analysisControls,
 body:not([data-workbench-view=analysis]) .wb-media-source{display:none}
 body[data-workbench-view=arrange] #addManualPoint{display:none}
 body[data-workbench-view=edit] #modelControls,body[data-workbench-view=games] #modelControls,body[data-workbench-view=arrange] #modelControls{display:none}
-body[data-workbench-view=edit] .prompts,body[data-workbench-view=games] .prompts,body[data-workbench-view=arrange] .prompts,
 body[data-workbench-view=edit] #configState,body[data-workbench-view=games] #configState,body[data-workbench-view=arrange] #configState{display:none}
 body:not([data-workbench-view=analysis]) #wbDesign{grid-template-columns:1fr}
 body:not([data-workbench-view=analysis]) #wbPointList{display:flex;gap:10px;overflow:auto;max-height:250px}
 body:not([data-workbench-view=analysis]) .wb-point{min-width:180px;max-width:220px;margin-bottom:0}
 body[data-workbench-view=design] #wbTimelinePanel,body[data-workbench-view=edit] #wbTimelinePanel,body[data-workbench-view=games] #wbTimelinePanel{display:none}
-@media(max-width:1150px){.wb-shell{grid-template-columns:180px minmax(0,1fr);gap:16px}.grid{grid-template-columns:240px minmax(0,1fr)}body{padding:0 16px}}
+@media(max-width:1150px){.grid{grid-template-columns:240px minmax(0,1fr)}body{padding:0 16px}}
 @media(max-width:950px){
-  .wb-shell{grid-template-columns:1fr}.wb-tabs{position:static;flex-direction:row;flex-wrap:wrap}.wb-tabs button{flex:1 1 160px}
+  .app-toolbar{align-items:flex-start}.app-toolbar-actions{justify-content:flex-start}
+  .wb-tabs button{flex:1 1 140px}
   .grid{grid-template-columns:1fr}#inputPanel{position:static;grid-column:1;grid-row:auto;max-height:none}
   #eventResults,#analysisResults,#wbTimelinePanel,#wbDesign,#wbArrange,#legacyGameplayPanel,#wbRecordsPanel,#wbRecommendationActions,#gameWorkbenchPanel{grid-column:1}
   body:not([data-workbench-view=analysis]) #inputPanel video{max-height:200px}
