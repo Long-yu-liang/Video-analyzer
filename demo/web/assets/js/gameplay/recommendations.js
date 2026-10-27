@@ -25,6 +25,10 @@
       const locate=make('button',`${observation.frame_time_s.toFixed(2)} 秒 · ${control.point.opportunity}`);
       locate.type='button';locate.className='recommendation-seek';locate.onclick=()=>seek(observation.frame_time_s);
       const state=make('p','请选择适合的玩法，或放弃此交互点');state.className='recommendation-state';draft.state=state;
+      const incomplete=record.analysis.incomplete_points?.find(item=>item.point_id===control.pointId);
+      const abstained=record.analysis.abstentions?.find(item=>item.point_id===control.pointId);
+      if(incomplete)state.textContent='未完成：'+incomplete.reason;
+      else if(abstained&&!options.length)state.textContent='本次未推荐：'+abstained.reason;
       card.append(locate,make('p','先看适合怎么玩。播放方式、精确参数和坐标在选定玩法后再设计。'),state);
       const compare=make('div');compare.className='option-grid';card.append(compare);
       const editor=make('div');editor.className='recommendation-editor';card.append(editor);
@@ -59,7 +63,7 @@
         box.append(choose);compare.append(box);
       }
       if(!options.length){const reason=record.analysis.abstentions?.find(x=>x.point_id===control.pointId)?.reason;
-        compare.append(make('p',`本次未推荐玩法。${reason||'可以自行补充或放弃。'}`));}
+        compare.append(make('p',incomplete?`未完成：${incomplete.reason}`:`本次未推荐玩法。${reason||'可以自行补充或放弃。'}`));}
       const manual=make('button','自行设计玩法');manual.className='manual-recommendation';manual.type='button';
       manual.onclick=()=>{if(draft.stale)return;draft.option_id=null;draft.design={game_id:record.catalog_snapshot.types[0].id};edited();buildEditor();};
       const reason=make('textarea');reason.className='recommendation-reason';reason.placeholder='选择、修改或放弃的理由（选填）';

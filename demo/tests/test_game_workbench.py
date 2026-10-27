@@ -93,7 +93,7 @@ class GameWorkbenchTests(unittest.TestCase):
         self.assertTrue(all(not file['active'] for item in catalog[:-1] for file in item['files']))
         for stage in ('events', 'opportunities', 'gameplay'):
             path, text = load_stage_prompt(app.ROOT, stage)
-            self.assertEqual(path.parent.name, 'v22')
+            self.assertEqual(path.parent.name, 'v23' if stage=='gameplay' else 'v22')
             self.assertNotIn('假设示例', text)
         text = load_stage_prompt(app.ROOT, 'gameplay')[1]
         self.assertIn('七种玩法地位平等', text)

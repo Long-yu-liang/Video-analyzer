@@ -48,7 +48,7 @@ def require_text(item, key, path):
     return value.strip()
 
 
-def abstentions(output, known_points, recommended):
+def abstentions(output, known_points, recommended, fill_missing=True):
     """Skip malformed optional notes; never invent a mapping from free-form text.
 
     Explicit unknown point references remain fatal, including in auxiliary objects.
@@ -81,6 +81,6 @@ def abstentions(output, known_points, recommended):
         seen.add(point_id)
         valid.append({'point_id': point_id, 'reason': reason})
     for point_id in known_points:
-        if point_id not in recommended and point_id not in seen:
+        if fill_missing and point_id not in recommended and point_id not in seen:
             valid.append({'point_id': point_id, 'reason': '模型未提供可用的未推荐原因，可回看后自行补充。'})
     return valid, warnings

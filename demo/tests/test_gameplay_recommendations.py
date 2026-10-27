@@ -110,8 +110,9 @@ class RecommendationChecks(MockModelTestCase):
              patch.object(app, 'urlopen', return_value=fixture_module.completion(answer)), \
              patch.object(app, 'save_record'):
             result = app.suggest_gameplay(fixture.raw, 'clip.mp4', 'b'*32, ['p1','p2'], 'v20')
-        self.assertEqual(result['status'], 'success', result.get('error'))
-        self.assertEqual(result['validation_status'], 'passed_with_warnings')
+        self.assertEqual(result['status'], 'partial', result.get('error'))
+        self.assertEqual(result['validation_status'], 'incomplete')
+        self.assertEqual(result['analysis']['incomplete_points'][0]['point_id'],'p2')
         self.assertEqual(len(result['analysis']['recommendations']), 1)
         self.assertEqual(result['validation_warnings'][0]['path'], 'abstentions[0]')
         self.assertEqual(json.loads(result['raw_text']), answer)

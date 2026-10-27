@@ -318,7 +318,8 @@ $('suggest').onclick=async()=>{
 $('recommend').onclick=async(options={})=>{
   const selected=options.pointId?[options.pointId]:typeof Workbench!=='undefined'&&Workbench.gameplayPointIds?Workbench.gameplayPointIds():selectedPointIds();if(!opportunityRecord||!selected.length)return;
   busy=true;const previous={gameplayRecord,selectionDrafts,designDrafts,recommendationDrafts};ready();$('file').disabled=$('sample').disabled=true;
-  $('status').textContent=`正在调用 ${$('model').value} 推荐预设玩法（计费）。`;
+  const batched=Number($('gameplayPrompt').value.slice(1))>=20;
+  $('status').textContent=`正在调用 ${$('model').value} 推荐玩法：${selected.length} 个点，${batched?`每批最多 5 个，共 ${Math.ceil(selected.length/5)} 批`:'单次调用'}（计费）。`;
   try{
     const {params,body}=videoRequestParams();params.record_id=opportunityRecord.record_id;params.selected=selected.join(',');params.version=$('gameplayPrompt').value;params.model=$('model').value;
     const times={};
@@ -330,12 +331,13 @@ $('recommend').onclick=async(options={})=>{
     params.times=JSON.stringify(times);
     const response=await fetch('/gameplay?'+new URLSearchParams(params),{method:'POST',headers:{'X-Local-Token':config.token},body});
     const result=await response.json();record=result;updateRawPreview();$('download').disabled=!result.record_file;
-    if(!response.ok||result.status!=='success')throw Error(result.error||'玩法推荐失败');
+    if(!response.ok||(result.status!=='success'&&!(result.batches&&result.analysis)))throw Error(result.error||'玩法推荐失败');
     gameplayRecord=result;
     renderRecommendations(result.analysis.recommendations||[]);
     $('metrics').textContent=`第三步 ${result.model} · ${result.video_name} · ${result.prompt_file} · ${result.total_s}s · ${result.record_file}`;
     const warningCount=(result.analysis.warnings||[]).length+(result.request_warnings||[]).length;
-    $('status').textContent=warningCount?`玩法推荐已保存，有 ${warningCount} 项输出警告，合法玩法已保留；请查看下方详情。`
+    const coverage=result.analysis.coverage;
+    $('status').textContent=coverage?`已处理 ${coverage.requested_count} 个点：${coverage.recommended_count} 个有推荐，${coverage.abstained_count} 个明确不推荐，${coverage.incomplete_count} 个未完成。${coverage.incomplete_count?'可点击“仅推荐此点”补充，已有方案保留。':''}`:warningCount?`玩法推荐已保存，有 ${warningCount} 项输出警告，合法玩法已保留；请查看下方详情。`
       :gameplayRecord.schema_version===2?'历史 v19 规则设计：请比较方案并完成对应审核。':'玩法推荐已保存。请查看为什么适合、玩家怎么玩，再接受、修改或放弃。';
   }catch(error){gameplayRecord=previous.gameplayRecord;selectionDrafts=previous.selectionDrafts;designDrafts=previous.designDrafts;recommendationDrafts=previous.recommendationDrafts;$('status').textContent=error.message+(previous.gameplayRecord?'；已有草稿保留。':'')}
   finally{busy=false;$('file').disabled=$('sample').disabled=false;ready()}

@@ -53,8 +53,17 @@ def validate(text, points, catalog):
             if isinstance(item.get(key), str) and item[key].strip():
                 result[key] = item[key].strip()
         results.append(result)
-    notes, warnings = abstentions(output, by_id, counts)
-    return {'recommendations': results, 'abstentions': notes, 'warnings': warnings, 'limitations': []}
+    notes, warnings = abstentions(output, by_id, counts, fill_missing=False)
+    handled = set(counts) | {note['point_id'] for note in notes}
+    incomplete = [{'point_id': point_id, 'reason': '模型未返回推荐或有效的不推荐理由。'}
+                  for point_id in by_id if point_id not in handled]
+    for item in incomplete:
+        warnings.append({'path':item['point_id'], 'code':'missing_point_result',
+                         'message':item['point_id']+' 未完成：'+item['reason']})
+    return {'recommendations': results, 'abstentions': notes, 'incomplete_points': incomplete,
+            'coverage': {'requested_count':len(by_id), 'recommended_count':len(counts),
+                         'abstained_count':len(notes), 'incomplete_count':len(incomplete),
+                         'complete':not incomplete}, 'warnings': warnings, 'limitations': []}
 
 
 def build_brief(payload, opportunity, gameplay, points):

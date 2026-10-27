@@ -73,3 +73,12 @@ const legacy={...M.point('legacy',3,'行为','依据'),design:core};
 const hidden={...ready,id:'discarded',review:'discarded'};
 assert.deepEqual(M.gameReadyPoints([unselectedGamePoint,ready,removedChoice,legacy,hidden]).map(p=>p.id),['chosen','legacy']);
 assert.equal(M.gameReadyPoints([unselectedGamePoint]).length,0,'no unselected points in game generation step');
+const coverageState=M.blank();
+const coverageRecords={opportunities:{record_id:parent,analysis:{interaction_points:[{point_id:'p1',time_s:1,opportunity:'动作','reason':'依据'},{point_id:'p2',time_s:2,opportunity:'其他动作',reason:'依据'}]}},
+ gameplay:{record_id:'e'.repeat(32),parent_record_id:parent,status:'partial',analysis:{recommendations:[],abstentions:[{point_id:'p1',reason:'画面没有具体目标'}],incomplete_points:[{point_id:'p2',reason:'模型未返回内容'}]}}};
+M.ingest(coverageState,coverageRecords);
+assert.equal(coverageState.points[0].recommendation_status,'abstained');
+assert.equal(coverageState.points[1].recommendation_status,'incomplete');
+assert.equal(coverageState.points[1].versions.length,0);
+delete coverageState.points[1].recommendation_status;M.ingest(coverageState,coverageRecords);
+assert.equal(coverageState.points[1].recommendation_status,'incomplete','restoring an already-seen result retains coverage status');

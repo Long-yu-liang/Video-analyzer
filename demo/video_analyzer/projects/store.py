@@ -117,11 +117,16 @@ def validate(state):
             raise ValueError(f'{label} ID 无效或重复。')
         ids.add(point['id'])
         allowed_point = {'id', 'origin', 'source_record_id', 'point_id', 'time_s', 'opportunity', 'reason', 'review',
-                         'enabled', 'versions', 'selected', 'design', 'brief', 'confirmed', 'stale', 'merged_into', 'decision_reason', 'gameplay_committed'}
+                         'enabled', 'versions', 'selected', 'design', 'brief', 'confirmed', 'stale', 'merged_into', 'decision_reason', 'gameplay_committed',
+                         'recommendation_status', 'recommendation_message', 'recommendation_record_id'}
         if set(point) - allowed_point:
             raise ValueError(f'{label} 含未知字段。')
         if 'gameplay_committed' in point and type(point['gameplay_committed']) is not bool:
             raise ValueError('交互点提交标记应为布尔值。')
+        if 'recommendation_status' in point and point['recommendation_status'] not in ('recommended','abstained','incomplete'):
+            raise ValueError('玩法推荐状态无效。')
+        if 'recommendation_message' in point:text(point['recommendation_message'],label+'.recommendation_message',limit=6000)
+        if 'recommendation_record_id' in point:identifier(point['recommendation_record_id'])
         if point.get('origin') not in ('ai', 'manual') or point.get('review') not in ('pending', 'kept', 'discarded'):
             raise ValueError(f'{label} 来源或审核状态无效。')
         number(point.get('time_s'), duration, label+'.time_s')

@@ -108,11 +108,15 @@ class Handler(BaseHTTPRequestHandler):
                             'catalog_snapshot', 'template_snapshot', 'observations', 'parent_record_id',
                             'request_warnings', 'record_kind', 'model_call_made', 'source_record_id', 'source_record_file',
                             'validation_status', 'validation_warnings', 'validation_error', 'media_error', 'error', 'usage',
-                            'partial_analysis', 'segment_coverage', 'usage_reported_subtotal', 'usage_incomplete', 'event_validation_summary')
+                            'partial_analysis', 'segment_coverage', 'usage_reported_subtotal', 'usage_incomplete', 'event_validation_summary',
+                            'coverage', 'batch_size', 'model_request_count')
                     result = {k: source[k] for k in keys if k in source}
                     if isinstance(source.get('segments'), list):
                         result['segments'] = [{k: item[k] for k in ('record_id', 'status', 'usage', 'clip_start_s', 'clip_end_s')
                                                if k in item} for item in source['segments'] if isinstance(item, dict)]
+                    if isinstance(source.get('batches'),list):
+                        result['batches']=[{k:item[k] for k in ('batch_index','selected_point_ids','status','error','usage') if k in item}
+                                           for item in source['batches'] if isinstance(item,dict)]
                     result['record_file'] = matches[0].relative_to(services.ROOT).as_posix()
                     result['restored_summary'] = True
                     result['observations'] = [{k: v for k, v in item.items() if k != 'preview_jpeg_base64'}

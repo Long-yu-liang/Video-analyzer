@@ -96,6 +96,15 @@
       state.seen_record_ids.push(opportunities.record_id);
     }
     const gameplay = records.gameplay;
+    if (gameplay) {
+      const setResult=(pointId,status,message='')=>{
+        const p=state.points.find(p=>p.source_record_id===gameplay.parent_record_id&&p.point_id===pointId);
+        if(p)Object.assign(p,{recommendation_status:status,recommendation_message:message,recommendation_record_id:gameplay.record_id});
+      };
+      for(const note of gameplay.analysis?.abstentions||[])setResult(note.point_id,note.reason==='模型未提供可用的未推荐原因，可回看后自行补充。'?'incomplete':'abstained',note.reason);
+      for(const item of gameplay.analysis?.incomplete_points||[])setResult(item.point_id,'incomplete',item.reason);
+      for(const item of gameplay.analysis?.recommendations||[])setResult(item.point_id,'recommended');
+    }
     if (gameplay && !state.seen_record_ids.includes(gameplay.record_id)) {
       for (const o of gameplay.analysis?.recommendations || []) {
         const p = state.points.find(p => p.source_record_id === gameplay.parent_record_id && p.point_id === o.point_id);
@@ -315,7 +324,7 @@
     const wrap=make('label',label), select=make('select');values.forEach(([id,name])=>{const o=make('option',name);o.value=id;select.append(o);});
     select.value=value;select.onchange=()=>action(select.value);wrap.append(select);return wrap;
   }
-  function status(p) {return p.review==='discarded'?'已停用':p.confirmed?'描述已确认':p.design?'已选草稿':'未选玩法';}
+  function status(p) {const base=p.review==='discarded'?'已停用':p.confirmed?'描述已确认':p.design?'已选草稿':p.versions?.length?'已有方案，未选择':'未选玩法';return base+(p.recommendation_status==='incomplete'?' · 推荐未完成':p.recommendation_status==='abstained'?' · 本次未推荐':'');}
   function renderTimeline() {
     const container=$('wbTimeline');if(!container)return;container.replaceChildren();
     const track=make('div',undefined,'wb-track');container.append(track);const d=duration();
@@ -458,23 +467,25 @@
     host.append(button('下一步：推荐与选择玩法 →',commitGameplaySelection));
   }
   function renderOptionCards(host,p){
+    if(p.recommendation_status==='incomplete')host.append(make('p','未完成：'+p.recommendation_message+' 可点击“仅推荐此点”；已有方案仍保留。','validation-warnings'));
+    else if(p.recommendation_status==='abstained')host.append(make('p','本次未推荐：'+p.recommendation_message));
     const alternatives=make('section');alternatives.append(make('h3','玩法方案'),make('p','每个方案有独立描述。选择用于当前交互点的方案，或打开弹窗编辑。'));host.append(alternatives);
     const grid=make('div',undefined,'option-grid');alternatives.append(grid);
-    if(!p.versions.length)grid.append(make('p','尚无可比较的推荐。可运行原有第三步，或自行设计。历史无 option_id 的方案在兼容编辑器中查看。'));
+    if(!p.versions.length)grid.append(make('p',p.origin==='ai'?'尚无推荐方案，可以直接点击“仅推荐此点”，或自行设计。':'尚无方案，可以自行设计玩法。'));
     p.versions.forEach(v=>{const card=make('article',undefined,'option-card');
       card.append(make('h3',v.design.title||gameName(v.design.game_id)),make('small',`${v.label} · 画面 ${v.time_s.toFixed(2)} 秒`));
       for(const k of ['player_goal','player_action','fit'])card.append(make('p',`${labels[k]}：${v.design[k]}`));
       card.append(button(p.selected===v.id?'当前所选':'选择此版本',()=>{choose(p,v);p.review='kept';touch(true);}),button('查看／编辑玩法描述',()=>openOptionEditor(p,v)),button('删除方案',()=>deleteRecommendation(p,v)));grid.append(card);});
-    if(currentView==='design'&&p.origin==='ai')host.append(button('仅重新推荐此点（计费，需确认）',async()=>{
+    if(currentView==='design'&&p.origin==='ai')host.append(button('仅推荐此点',async()=>{
       if(!verified)throw Error('请先选择与项目匹配的视频');
       if(p.source_record_id!==bridge.peek().records.opportunities?.record_id)throw Error('该点不在当前分析批次，请先打开其对应项目工作状态；旧方案不会丢失');
       const confirmation=make('aside',undefined,'validation-warnings');
-      confirmation.append(make('p','仅为当前点调用一次原有第三步流程，会计费。保留旧方案，不自动替换当前选择。'),
-        button('确认并重新推荐当前点',async()=>{
+      confirmation.append(make('p','仅为当前点推荐玩法，会调用一次模型并计费。已有方案保留，不自动替换当前选择。'),
+        button('确认推荐当前点',async()=>{
           confirmation.remove();retrying=true;
           try{await bridge.retry(p.point_id,p.time_s);}finally{retrying=false;notify();render();}
         }),
-        button('取消重新推荐',()=>confirmation.remove()));host.append(confirmation);
+        button('取消',()=>confirmation.remove()));host.append(confirmation);
     }));
     host.append(button('自行设计新方案',()=>openOptionEditor(p,null)),button('前往游戏生成与管理 →',()=>switchView('games')));
     if(p.design&&!p.selected)host.append(button('将现有草稿另存为新方案',()=>openOptionEditor(p,null,true)));

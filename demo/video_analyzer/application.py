@@ -17,6 +17,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 from .gameplay import legacy_design as gameplay_design
 from .gameplay import recommendations as gameplay_recommendations
+from .gameplay import batching as gameplay_batching
 from .projects import store as projects
 from .contracts.output import ContractError, MISSING, expected, parse_json, require_text
 from .contracts import legacy as legacy_contracts, stages as stage_contracts
@@ -199,7 +200,9 @@ def load_stage_result(record_id, stage, label):
     if len(matches) != 1:
         raise ValueError(f'{label}不存在。' if not matches else '记录 ID 对应多个文件。')
     record = json.loads(matches[0].read_text(encoding='utf-8'))
-    if record.get('record_id') != record_id or record.get('stage') != stage or record.get('status') != 'success':
+    usable_partial = (stage == 'gameplay' and isinstance(record.get('batches'), list)
+                      and isinstance(record.get('analysis', {}).get('recommendations'), list))
+    if record.get('record_id') != record_id or record.get('stage') != stage or (record.get('status') != 'success' and not usable_partial):
         raise ValueError(f'{label}不可用。')
     record['record_file'] = matches[0].relative_to(ROOT).as_posix()
     return record
@@ -215,7 +218,7 @@ def clip_video(path, output, start_s, end_s):
 
 def model_request_count(record):
     """A failed local preprocessing segment is not a model request."""
-    parts = record.get('segments') if isinstance(record.get('segments'), list) else [record]
+    parts = record.get('batches') if isinstance(record.get('batches'), list) else record.get('segments') if isinstance(record.get('segments'), list) else [record]
     return sum(len(item['api_attempts']) if isinstance(item.get('api_attempts'), list)
                else int(bool(item.get('raw_response'))) for item in parts)
 
@@ -744,6 +747,7 @@ def suggest_gameplay(raw, video_name, record_id, selected_ids, version=None, mod
                 except (ValueError, KeyError, TypeError):
                     events_by_id = {}
             observations = []
+            point_messages = {}
             content = [{'type': 'text', 'text': prompt + '\n\n预设小游戏目录：\n' + catalog_text(catalog)}]
             if design_v2:
                 content[0]['text'] += '\n游戏设计模板（新增控件，不是视频事实）：\n' + json.dumps(template_snapshot, ensure_ascii=False)
@@ -762,6 +766,7 @@ def suggest_gameplay(raw, video_name, record_id, selected_ids, version=None, mod
                                 f"实际画面时间={frame['time_s']:.6f}秒；请求画面位置={point['requested_time_s']:.6f}秒。\n"
                                 f"旧机会（待核实）：{point['opportunity']}\n旧理由（待核实）：{point['reason']}\n{event_text}"})
                 content.append({'type': 'image_url', 'image_url': {'url': 'data:image/jpeg;base64,' + frame['data']}})
+                point_messages[point_id] = content[-2:]
                 observations.append({'point_id': point['point_id'], 'observation_id': point['observation_id'],
                                      'original_time_s': point['original_time_s'],
                                      'requested_time_s': point['requested_time_s'], 'frame_time_s': frame['time_s'],
@@ -779,11 +784,15 @@ def suggest_gameplay(raw, video_name, record_id, selected_ids, version=None, mod
             if not base.startswith('https://'):
                 raise ValueError('模型 API 地址必须使用 HTTPS。')
             record['preprocess_s'] = round(time.perf_counter() - started, 3)
-            output = call_v13_model(base + '/chat/completions', body, key, record)
             if recommendation_only:
-                record['analysis'] = gameplay_recommendations.validate(
-                    output, [by_id[item] for item in selected_ids], catalog)
-            elif design_v2:
+                gameplay_batching.run(record,selected_ids,by_id,catalog,prompt,catalog_text(catalog),point_messages,
+                                      base + '/chat/completions',key,call_v13_model)
+                record.update(total_s=round(time.perf_counter()-started,3),cost=None,
+                              cost_note='分批调用；完整原始返回与实际用量见 batches，缺失用量不记为零。')
+                save_record(record)
+                return record
+            output = call_v13_model(base + '/chat/completions', body, key, record)
+            if design_v2:
                 record['analysis'] = gameplay_design.validate_recommendations(
                     output, [by_id[item] for item in selected_ids], catalog, template_snapshot)
             else:

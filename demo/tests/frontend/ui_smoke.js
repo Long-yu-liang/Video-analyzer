@@ -33,6 +33,7 @@ const nodes = Object.fromEntries(ids.map(id => [id, element(id)]));
 let requestedURL, briefBody;
 let failMedia = false;
 let partialFailure = false;
+let partialGameplay = false;
 let gameplayRecommendations = [{ point_id: 'p1', observation_id: 'e1', event_id: 'e1', time_s: 1.5,
   opportunity: '决定是否投篮', reason: '球已经在手中', game_id: 'choice', game_name: '剧情选择',
   fit: '持球且有可见分支', player_goal: '作出选择', player_action: '在动作里选一个',
@@ -101,6 +102,8 @@ const fetch = async (url, options = {}) => {
   }
   if (url.startsWith('/gameplay?')) {
     requestedURL = url;
+    if(partialGameplay)return {ok:true,json:async()=>({status:'partial',record_id:'d'.repeat(32),record_file:'partial-gameplay.json',batches:[{status:'partial'}],
+      analysis:{recommendations:[],incomplete_points:[{point_id:'p1',reason:'模型漏答'}],coverage:{requested_count:1,recommended_count:0,abstained_count:0,incomplete_count:1,complete:false}}})};
     return { ok: true, json: async () => ({ status: 'success', record_id: 'c'.repeat(32), record_file: 'gameplay.json',
       model: 'qwen3-vl-plus', video_name: 'S05_传球投篮.mp4', prompt_file: 'prompts/v15/gameplay.txt', total_s: 1,
       analysis: { recommendations: gameplayRecommendations } }) };
@@ -200,6 +203,7 @@ vm.runInNewContext(usageScript + '\n' + recordPreviewScript + '\n' + script, {
   await nodes.recommend.onclick();
   assert.equal(nodes.gameplay.children.find(child => child.className === 'empty-recommendation').textContent, '本次未推荐玩法。');
   assert.match(nodes.gameplay.children.find(child => child.className === 'event').children.find(child => child.className === 'fit').textContent, /自行选择/);
+  partialGameplay=true;await nodes.recommend.onclick();assert.match(nodes.status.textContent,/1 个未完成/);partialGameplay=false;
   nodes.events.children[0].children[0].checked = false;
   nodes.events.children[0].children[0].onchange();
   assert.equal(nodes.suggest.disabled, true);
