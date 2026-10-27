@@ -1,5 +1,7 @@
 
 const $=id=>document.getElementById(id);let config,record,eventRecord,opportunityRecord,gameplayRecord,blobURL,busy=false,reviewChecks=[],pointControls=[],selectionDrafts=[],designDrafts=[],recommendationDrafts=[];
+const rawViewer=typeof RecordPreview==='undefined'?null:RecordPreview.create($('analysisRecordDetails'),$('raw'),()=>record);
+function updateRawPreview(){if(rawViewer)rawViewer.refresh();else $('raw').textContent=record?'记录已保存，可导出查看完整内容。':'暂无分析记录。';}
 const selectedEventIds=()=>reviewChecks.filter(item=>item.checked).map(item=>item.value);
 const selectedPointIds=()=>pointControls.filter(item=>item.include.checked).map(item=>item.pointId);
 function clearGameplay(){gameplayRecord=null;selectionDrafts=[];designDrafts=[];recommendationDrafts=[];$('gameplay').replaceChildren();}
@@ -76,9 +78,9 @@ function applyInitialChoices(){
 }
 function clearResults(){
   record=null;eventRecord=null;opportunityRecord=null;reviewChecks=[];pointControls=[];clearGameplay();
-  $('download').disabled=true;$('summary').textContent='尚未调用模型。没有预置分析结果。';
+  $('download').disabled=true;$('summary').textContent='';
   $('points').replaceChildren();$('events').replaceChildren();$('metrics').textContent='';$('limitations').replaceChildren();$('raw').textContent='暂无';
-  $('reviewHint').textContent='先识别事件。采样率和输入方式只用于第一步。可以取消勾选失实事件，再运行第二步。';
+  $('reviewHint').textContent='';
 }
 function ready(){
   if(!config)return;
@@ -95,8 +97,8 @@ function ready(){
   $('model').disabled=$('mode').disabled=$('fps').disabled=busy;
   $('eventPrompt').disabled=$('opportunityPrompt').disabled=$('gameplayPrompt').disabled=busy;
   const sampling=$('mode').value==='frames'?'顺序采样':'直接视频';
-  $('flowHint').textContent=$('eventPrompt').value==='v14'
-    ?`第一步使用 ${$('model').value||'未选模型'}、${sampling}、${$('fps').value} fps。事件识别选 v14 时，超过 25 秒会分段并多次调用。第二步和第三步沿用所选模型，并查看对应画面。`
+  $('flowHint').textContent=['v14','v22'].includes($('eventPrompt').value)
+    ?`第一步使用 ${$('model').value||'未选模型'}、${sampling}、${$('fps').value} fps。当前事件识别版本超过 25 秒会分段并多次调用。第二步和第三步沿用所选模型，并查看对应画面。`
     :`第一步使用 ${$('model').value||'未选模型'}、${sampling}、${$('fps').value} fps。第二步和第三步沿用所选模型。`;
   const key=config.configured.beeroute?'已配置':'待配置 BEEROUTE_API_KEY';
   const names=Object.keys(config.models||{});
@@ -131,7 +133,7 @@ $('sample').onchange=async()=>{
   $('file').value='';
   const name=$('sample').value;
   if(name){$('video').src='/sample?name='+encodeURIComponent(name)}
-  record=null;eventRecord=null;opportunityRecord=null;reviewChecks=[];pointControls=[];clearGameplay();$('reviewHint').textContent='先识别事件。采样率和输入方式只用于第一步。可以取消勾选失实事件，再运行第二步。';$('download').disabled=true;$('summary').textContent=name?('已选择 '+name+'，等待分析。'):'尚未选择视频。';
+  record=null;eventRecord=null;opportunityRecord=null;reviewChecks=[];pointControls=[];clearGameplay();$('reviewHint').textContent='';$('download').disabled=true;$('summary').textContent=name?('已选择 '+name+'，等待分析。'):'尚未选择视频。';
   $('points').replaceChildren();$('events').replaceChildren();$('metrics').textContent='';$('limitations').replaceChildren();$('raw').textContent='暂无';ready();
 };
 $('file').onchange=()=>{
@@ -139,7 +141,7 @@ $('file').onchange=()=>{
   if(blobURL)URL.revokeObjectURL(blobURL);
   const f=$('file').files[0];
   if(f){blobURL=URL.createObjectURL(f);$('video').src=blobURL}
-  record=null;eventRecord=null;opportunityRecord=null;reviewChecks=[];pointControls=[];clearGameplay();$('reviewHint').textContent='先识别事件。采样率和输入方式只用于第一步。可以取消勾选失实事件，再运行第二步。';$('download').disabled=true;$('summary').textContent='已选择上传文件，等待分析。';
+  record=null;eventRecord=null;opportunityRecord=null;reviewChecks=[];pointControls=[];clearGameplay();$('reviewHint').textContent='';$('download').disabled=true;$('summary').textContent='已选择上传文件，等待分析。';
   $('points').replaceChildren();$('events').replaceChildren();$('metrics').textContent='';$('limitations').replaceChildren();$('raw').textContent='暂无';ready();
 };
 function videoRequestParams(){
@@ -148,17 +150,22 @@ function videoRequestParams(){
   else{params.name=$('file').files[0].name;body=$('file').files[0]}
   return {params,body};
 }
-function renderReviewedEvents(events,readOnly=false){
+function availableEventRecord(result){
+  if(result?.analysis?.events)return result;
+  if(result?.partial_analysis?.events?.length)return {...result,analysis:result.partial_analysis,partial_input:true};
+  return null;
+}
+function renderReviewedEvents(events){
   $('events').replaceChildren();reviewChecks=[];
   for(const e of events){
     const row=document.createElement('div');row.className='event';
-    const box=document.createElement('input');box.type='checkbox';box.checked=!readOnly;box.disabled=readOnly;box.value=e.observation_id;box.onchange=ready;if(!readOnly)reviewChecks.push(box);
+    const box=document.createElement('input');box.type='checkbox';box.checked=true;box.disabled=false;box.value=e.observation_id;box.onchange=ready;reviewChecks.push(box);
     const seek=document.createElement('button');seek.type='button';seek.textContent=`${e.observation_s.toFixed(2)} 秒 · ${e.description}`;
     seek.onclick=()=>{$('video').currentTime=e.observation_s;$('video').pause()};
     const detail=document.createElement('span');detail.textContent=`区间 ${e.start_s.toFixed(2)}–${e.end_s.toFixed(2)} 秒；画面依据：${e.evidence}；不确定：${e.uncertainty}`;
     row.append(box,seek,detail);$('events').append(row);
   }
-  $('reviewHint').textContent=readOnly?'以下仅为已完成片段，可点击回看；全片未完成，不能进入第二步。':events.length?'请逐条回看；取消勾选失实事件后，再运行第二步。':'第一步未记录事件；不能运行第二步。';
+  $('reviewHint').textContent=eventRecord?.partial_input?'全片未完成，可勾选已完成片段中的事件继续寻找交互机会。':events.length?'请逐条回看；取消勾选失实事件后，再运行第二步。':'第一步未记录事件。';
   ready();
 }
 function renderEventDiagnostics(result){
@@ -267,10 +274,11 @@ $('recognize').onclick=async()=>{
     const {params,body}=videoRequestParams();
     params.version=$('eventPrompt').value;params.model=$('model').value;params.mode=$('mode').value;params.fps=$('fps').value;
     const response=await fetch('/events?'+new URLSearchParams(params),{method:'POST',headers:{'X-Local-Token':config.token},body});
-    const result=await response.json();mediaFailure=!!result.media_error;record=result;$('raw').textContent=JSON.stringify(result,null,2);$('download').disabled=!result.record_file;
+    const result=await response.json();mediaFailure=!!result.media_error;record=result;updateRawPreview();$('download').disabled=!result.record_file;
     if(result.status!=='success'&&result.partial_analysis){
+      eventRecord=availableEventRecord(result);
       $('summary').textContent='仅已完成片段：'+result.partial_analysis.summary;
-      renderReviewedEvents(result.partial_analysis.events,true);renderEventDiagnostics(result);
+      renderReviewedEvents(result.partial_analysis.events||[]);renderEventDiagnostics(result);
       for(const item of result.partial_analysis.limitations||[]){const li=document.createElement('li');li.textContent=item;$('limitations').append(li)}
       $('metrics').textContent=`第一步未完成 · ${result.model} · ${result.total_s}s · ${result.record_file||''}`;
       $('status').textContent=result.error||'部分片段失败；已保留已完成结果和实际用量。';
@@ -295,7 +303,7 @@ $('suggest').onclick=async()=>{
   try{
     const {params,body}=videoRequestParams();params.record_id=eventRecord.record_id;params.selected=selected.join(',');params.version=$('opportunityPrompt').value;params.model=$('model').value;
     const response=await fetch('/opportunities?'+new URLSearchParams(params),{method:'POST',headers:{'X-Local-Token':config.token},body});
-    const result=await response.json();record=result;$('raw').textContent=JSON.stringify(result,null,2);$('download').disabled=!result.record_file;
+    const result=await response.json();record=result;updateRawPreview();$('download').disabled=!result.record_file;
     if(!response.ok||result.status!=='success')throw Error(result.error||'交互机会分析失败');
     opportunityRecord=result;
     renderStagePoints(result.analysis.interaction_points,result.metadata&&result.metadata.duration_s,result.analysis.warnings||[]);
@@ -321,7 +329,7 @@ $('recommend').onclick=async(options={})=>{
     }
     params.times=JSON.stringify(times);
     const response=await fetch('/gameplay?'+new URLSearchParams(params),{method:'POST',headers:{'X-Local-Token':config.token},body});
-    const result=await response.json();record=result;$('raw').textContent=JSON.stringify(result,null,2);$('download').disabled=!result.record_file;
+    const result=await response.json();record=result;updateRawPreview();$('download').disabled=!result.record_file;
     if(!response.ok||result.status!=='success')throw Error(result.error||'玩法推荐失败');
     gameplayRecord=result;
     renderRecommendations(result.analysis.recommendations||[]);
@@ -344,7 +352,7 @@ $('saveBrief').onclick=async()=>{
       fit:item.ai?item.ai.fit:'',player_goal:item.inputs.goal.value,player_action:item.inputs.action.value,
       success:item.inputs.success.value,failure:item.inputs.failure.value,feedback:item.inputs.feedback.value}));
     const response=await fetch('/briefs',{method:'POST',headers:{'Content-Type':'application/json','X-Local-Token':config.token},body:JSON.stringify({opportunity_record_id:opportunityRecord.record_id,gameplay_record_id:gameplayRecord.record_id,selections})});
-    const result=await response.json();record=result;$('raw').textContent=JSON.stringify(result,null,2);$('download').disabled=!result.record_file;
+    const result=await response.json();record=result;updateRawPreview();$('download').disabled=!result.record_file;
     if(!response.ok||result.status!=='success')throw Error(result.error||'玩法描述保存失败');
     $('metrics').textContent=`玩法描述 ${result.video_name} · ${result.record_file}；推荐 ${gameplayRecord.record_file}`;
     $('status').textContent='玩法描述已保存，未调用模型。后续可对接受或修改后的玩法细化设计。';
@@ -397,7 +405,7 @@ function createWorkbenchBridge(){
       for(const [id,value] of Object.entries(session.settings||{})){
         if(['model','mode','fps','eventPrompt','opportunityPrompt','gameplayPrompt'].includes(id)&&Array.from($(id).options).some(o=>o.value===value))$(id).value=value;
       }
-      eventRecord=records.events||null;opportunityRecord=records.opportunities||null;gameplayRecord=records.gameplay||null;
+      eventRecord=availableEventRecord(records.events);opportunityRecord=records.opportunities||null;gameplayRecord=records.gameplay||null;
       if(eventRecord){renderReviewedEvents(eventRecord.analysis.events);$('summary').textContent=eventRecord.analysis.summary;
         renderEventDiagnostics(eventRecord);
         for(const c of reviewChecks){const stored=session.reviews?.find(r=>r.id===c.value);if(stored)c.checked=stored.checked;}}
@@ -406,7 +414,7 @@ function createWorkbenchBridge(){
       if(gameplayRecord)renderRecommendations(gameplayRecord.analysis.recommendations||[]);
       for(const d of recommendationDrafts){const saved=session.drafts?.find(s=>s.point_id===d.control.pointId);if(saved&&d.restore)d.restore(saved);}
       record=gameplayRecord||opportunityRecord||eventRecord;
-      $('raw').textContent=record?'关联记录摘要；完整原始响应保留在 '+record.record_file+'\n'+JSON.stringify(record,null,2):'暂无';$('download').disabled=!record;
+      updateRawPreview();$('download').disabled=!record;
       renderPromptPreview();renderCatalog();ready();
     },
     retry:async(pointId,time)=>{

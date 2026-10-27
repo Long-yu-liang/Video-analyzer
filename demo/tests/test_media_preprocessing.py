@@ -181,8 +181,8 @@ class MediaPreprocessingChecks(unittest.TestCase):
     def test_oversized_libx264_segment_is_rejected_without_fallback(self):
         def fake(args):
             self.assertEqual(args[args.index('-c:v') + 1], 'libx264')
-            Path(args[-1]).write_bytes(b'x' * (12 * 1024 * 1024 + 1))
-        with tempfile.TemporaryDirectory() as folder, self.assertRaisesRegex(ValueError, '12 MiB'):
+            Path(args[-1]).write_bytes(b'x' * (30 * 1024 * 1024 + 1))
+        with tempfile.TemporaryDirectory() as folder, self.assertRaisesRegex(ValueError, '30 MiB'):
             media.clip_video(Path('in.mp4'), Path(folder) / 'clip.mp4', 0, 20, runner=fake)
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg not installed')

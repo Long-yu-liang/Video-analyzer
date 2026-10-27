@@ -40,9 +40,24 @@ def write(path, task):
 def listing(root, project_id):
     directory = folder(root, project_id)
     result = []
+    recycled_ids, recycled_points = set(), set()
+    base = directory.parent / 'trash'
+    for manifest_path in base.glob('*/manifest.json'):
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+            if manifest.get('status') != 'deleted':continue
+            if manifest.get('kind') == 'point':recycled_points.add(manifest.get('point_id'))
+            for entry in manifest.get('files', []):
+                path = (Path(root) / entry['stored']).resolve()
+                if not path.is_relative_to(base.resolve()) or path.suffix != '.json' or not path.is_file():continue
+                item = json.loads(path.read_text(encoding='utf-8'))
+                if item.get('stage') == 'game_generation':recycled_ids.add(item['record_id'])
+        except (ValueError, OSError, KeyError):continue
     with LOCK:
         for path in directory.glob('*.json'):
             task = json.loads(path.read_text(encoding='utf-8'))
+            if task.get('dismissed_at') or task.get('generation_id') in recycled_ids or task.get('point_id') in recycled_points:
+                continue
             if task['status'] in RUNNING and task.get('owner') != OWNER:
                 # A crashed server may have completed the record write before the job write.
                 try:
@@ -55,6 +70,20 @@ def listing(root, project_id):
                 write(path, task)
             result.append({k:v for k,v in task.items() if k != 'owner'})
     return sorted(result, key=lambda item:item['created_at'], reverse=True)
+
+
+def dismiss(root, payload):
+    directory = folder(root, payload.get('project_id'))
+    task_id = generation.identifier(payload.get('task_id'))
+    with LOCK:
+        path = directory / (task_id + '.json')
+        task = json.loads(path.read_text(encoding='utf-8'))
+        active_key = (str(Path(root).resolve()), payload['project_id'], task['point_id'])
+        if task['status'] in RUNNING or ACTIVE.get(active_key) == task_id:
+            raise generation.Conflict('任务仍在运行，不能移除。')
+        task['dismissed_at'] = now()
+        write(path, task)
+    return {'dismissed': True, 'task_id': task_id}
 
 
 def start(root, payload, runner=None):

@@ -206,7 +206,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(400, {'error': '设置格式无效，请检查字段、HTTPS 地址及模型名称。'})
             except OSError:
                 return self.respond(500, {'error': '设置保存失败，请检查 config 目录权限；旧配置未被替换。'})
-        if parsed.path in ('/game-tasks', '/game-generation', '/game-repair', '/game-playtest', '/game-selection', '/game-delete', '/game-restore', '/arrangement', '/game-session'):
+        if parsed.path in ('/game-tasks', '/game-task-dismiss', '/game-reparse', '/game-generation', '/game-repair', '/game-playtest', '/game-selection', '/game-delete', '/game-restore', '/arrangement', '/game-session'):
             try:
                 n = int(self.headers.get('Content-Length', '0'))
                 if not 0 < n <= (128000 if parsed.path=='/arrangement' else 32000):
@@ -215,6 +215,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(payload, dict):
                     raise ValueError('游戏请求必须为对象。')
                 if parsed.path == '/game-tasks':return self.respond(202,tasks.start(services.ROOT,payload))
+                if parsed.path == '/game-task-dismiss':return self.respond(200,tasks.dismiss(services.ROOT,payload))
+                if parsed.path == '/game-reparse':return self.respond(200,generation.reparse(services.ROOT,payload))
                 if parsed.path == '/game-repair' and not payload.get('generation_id'):
                     raise ValueError('修复必须提供原生成记录 ID。')
                 if parsed.path == '/game-generation' and payload.get('generation_id'):
@@ -269,7 +271,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 n = int(self.headers.get('Content-Length', '0'))
                 if not 0 < n <= services.MAX_VIDEO:
-                    raise ValueError('请选择不超过 12 MiB 的 MP4。')
+                    raise ValueError('请选择不超过 30 MiB 的 MP4。')
                 raw = self.rfile.read(n)
                 if len(raw) != n:
                     raise ValueError('上传不完整。')

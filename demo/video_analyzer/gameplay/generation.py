@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 from ..projects.store import Store, Conflict, identifier
 from ..storage import games as game_store
 from .. import settings
+from .output import OutputFormatError, parse_output, input_design, diagnose, format_warnings
 
 LOCK = threading.RLock()
 ACTIVE = set()
@@ -27,8 +28,8 @@ def snapshot(root, project_id, point_id, revision=None):
     if len(points) != 1:
         raise ValueError('项目中没有这个玩点。')
     point = points[0]
-    if point['review'] != 'kept' or point['stale'] or point.get('merged_into'):
-        raise ValueError('请先保留并核对当前玩点。')
+    if point['review'] != 'kept' or point.get('merged_into'):
+        raise ValueError('该交互点已停用或合并，请先选择可编辑的交互点。')
     design = point.get('design') or {}
     if not all(isinstance(design.get(k), str) and design[k].strip()
                for k in ('title', 'game_id', 'fit', 'player_goal', 'player_action', 'success', 'failure', 'feedback')):
@@ -50,7 +51,10 @@ def write(root, record):
 
 
 def read(root, record_id):
-    return game_store.read(root, record_id)
+    record = game_store.read(root, record_id)
+    if record.get('status') == 'failed':
+        record['failure_details'] = diagnose(record.get('raw_text', ''))
+    return record
 
 
 def listing(root, project_id, point_id):
@@ -130,17 +134,25 @@ def generate(root, payload, opener=None, progress=None, _reserved=False):
               'model': settings.get('MINIMAX_MODEL', 'MiniMax-M3.1-Flash'), 'model_call_made': False}
     try:
         prompt_name = 'repair.txt' if parent else 'generate.txt'
-        prompt_path = Path(root) / 'prompts/game-generation/v2' / prompt_name
-        if not prompt_path.is_file():  # Older local installations and fixtures retain v1 compatibility.
-            prompt_path = Path(root) / 'prompts/game-generation/v1' / prompt_name
+        prompt_paths = [Path(root) / 'prompts/game-generation' / version / prompt_name
+                        for version in ('v5', 'v4', 'v3', 'v2', 'v1')]
+        prompt_path = next((path for path in prompt_paths if path.is_file()), prompt_paths[-1])
         prompt = prompt_path.read_text(encoding='utf-8')
         record.update(prompt_file=prompt_path.relative_to(root).as_posix(), prompt=prompt)
+        record['requested_output_format'] = 'raw_sections_v1' if prompt_path.parent.name in ('v4', 'v5') else 'json'
         request_input = {'single_point': data}
         if parent:
-            request_input.update(previous=parent.get('output') or parent.get('raw_text'), problem=problem)
+            request_input.update(previous={'output': parent.get('output'),
+                                          'raw_text': parent.get('raw_text', ''),
+                                          'error': parent.get('error'),
+                                          'parse_error': parent.get('parse_error'),
+                                          'failure_details': parent.get('failure_details'),
+                                          'finish_reason': parent.get('finish_reason'),
+                                          'warnings': parent.get('warnings', [])}, problem=problem)
         body = {'model': record['model'], 'messages': [{'role': 'system', 'content': prompt},
                 {'role': 'user', 'content': json.dumps(request_input, ensure_ascii=False)}],
-                'max_completion_tokens': 16384, 'reasoning_effort': 'medium'}
+                'max_completion_tokens': int(settings.get('MINIMAX_MAX_COMPLETION_TOKENS', '32768')),
+                'reasoning_effort': settings.get('MINIMAX_REASONING_EFFORT', 'medium')}
         record['request'] = body
         base = settings.get('MINIMAX_BASE_URL', 'https://api.minimax.cn/v1').rstrip('/')
         if not base.startswith('https://'):
@@ -159,7 +171,15 @@ def generate(root, payload, opener=None, progress=None, _reserved=False):
         record.update(raw_text=choice['message'].get('content', ''), finish_reason=choice.get('finish_reason'))
         if record['finish_reason'] != 'stop':
             raise ValueError('模型未正常结束或输出截断；未自动重试。')
-        output = json.loads(record['raw_text'])
+        output, output_format = parse_output(record['raw_text'])
+        record['parsed_output_format'] = output_format
+        record['warnings'] = format_warnings(output_format)
+        if record['warnings']:
+            record['format_compatibility'] = {'original_diagnostics':diagnose(record['raw_text']), 'code_rewritten':False}
+        if output_format.startswith('raw_sections') and output.get('design') is None:
+            output['design'] = input_design(data)
+            record['design_source'] = 'input_summary'
+            record['warnings'].append('模型未返回详细设计；当前说明来自原输入方案，需试玩核对代码实际规则。宿主使用 60 秒兜底上限，不代表游戏自身时限。')
         record['output'] = output
         validate_output(output)
         record.update(status='checked', validation={'structure': True, 'syntax': True, 'playtested': False})
@@ -171,6 +191,8 @@ def generate(root, payload, opener=None, progress=None, _reserved=False):
     except Exception as error:
         # Never persist credentials or response headers in failure messages.
         record['error'] = str(error).replace(key, '[REDACTED]')[:4000]
+        if isinstance(error, OutputFormatError):
+            record['parse_error'] = error.details
     finally:
         try:
             if progress:
@@ -181,6 +203,42 @@ def generate(root, payload, opener=None, progress=None, _reserved=False):
                 if not _reserved:
                     ACTIVE.discard(active_key)
     return record
+
+
+@settings.scoped(lambda root, *a, **kw: (root, None))
+def reparse(root, payload):
+    """Create a traceable local derivative; no LLM call or source modification."""
+    source = read(root, payload.get('generation_id'))
+    if payload.get('project_id') != source.get('project_id'):
+        raise ValueError('游戏记录不属于当前项目。')
+    if source.get('stage') != 'game_generation' or source.get('status') != 'failed':
+        raise ValueError('仅支持本地重新检查失败的游戏记录。')
+    project, data, digest = snapshot(root, source['project_id'], source['point_id'], payload.get('revision'))
+    with LOCK:
+        if (project['project_id'], data['point_id']) in ACTIVE:
+            raise Conflict('该点正在生成，请等待后再进行本地恢复。')
+    if digest != source['input_hash']:
+        raise ValueError('当前玩法已变化，不能把旧代码恢复为新方案。')
+    if source.get('finish_reason') != 'stop':
+        raise ValueError('原始响应截断或未正常结束，不能本地恢复。')
+    output, output_format = parse_output(source.get('raw_text', ''))
+    warnings = format_warnings(output_format)
+    used_input_summary = output.get('design') is None and output_format.startswith('raw_sections')
+    if used_input_summary:
+        output['design'] = input_design(data)
+        warnings.append('原响应没有详细设计，当前说明仅为原输入方案摘要；规则与画面需人工试玩核对，宿主兜底时限为 60 秒。')
+    validate_output(output)
+    result = {key: source[key] for key in ('model', 'input', 'input_hash', 'raw_text', 'raw_response', 'prompt_file', 'prompt') if key in source}
+    result.update(record_id=secrets.token_hex(16), stage='game_generation', status='checked',
+                  project_id=project['project_id'], project_revision=project['revision'], point_id=data['point_id'],
+                  created_at=datetime.now(timezone.utc).isoformat(), parent_record_id=source['record_id'],
+                  model_call_made=False, usage={}, source_usage=source.get('usage', {}),
+                  local_recovery=True, parsed_output_format=output_format, output=output, warnings=warnings,
+                  validation={'structure': True, 'syntax': True, 'playtested': False}, stale=False)
+    if used_input_summary: result['design_source'] = 'input_summary'
+    if format_warnings(output_format):result['format_compatibility']={'original_diagnostics':diagnose(source.get('raw_text','')),'code_rewritten':False}
+    write(root, result)
+    return result
 
 
 def playtest(root, payload):

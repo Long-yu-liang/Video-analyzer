@@ -65,6 +65,9 @@ class GameWorkbenchTests(unittest.TestCase):
         self.assertFalse(result['validation']['playtested'])
 
     def test_v2_generation_and_repair_prompts_are_recorded(self):
+        shutil.rmtree(self.root / 'prompts/game-generation/v5')
+        shutil.rmtree(self.root / 'prompts/game-generation/v4')
+        shutil.rmtree(self.root / 'prompts/game-generation/v3')
         first = games.generate(self.root, self.payload, self.opener)
         self.assertEqual(first['prompt_file'], 'prompts/game-generation/v2/generate.txt')
         self.assertIn('输出前的简要自检', self.body['messages'][0]['content'])
@@ -73,6 +76,28 @@ class GameWorkbenchTests(unittest.TestCase):
                                              'problem': '检查元素绑定'}, self.opener)
         self.assertEqual(repaired['prompt_file'], 'prompts/game-generation/v2/repair.txt')
         self.assertIn('不以可选链', repaired['prompt'])
+
+    def test_v3_prompts_selected_and_visible_without_few_shot(self):
+        shutil.rmtree(self.root / 'prompts/game-generation/v5')
+        shutil.rmtree(self.root / 'prompts/game-generation/v4')
+        from video_analyzer.catalog.prompts import game_generation_catalog, load_stage_prompt
+        first = games.generate(self.root, self.payload, self.opener)
+        self.assertEqual(first['prompt_file'], 'prompts/game-generation/v3/generate.txt')
+        self.assertNotIn('示例一', first['prompt'])
+        repaired = games.generate(self.root, {**self.payload, 'generation_id': first['record_id'],
+                                             'problem': '检查元素绑定'}, self.opener)
+        self.assertEqual(repaired['prompt_file'], 'prompts/game-generation/v3/repair.txt')
+        catalog = game_generation_catalog(self.root)
+        self.assertEqual([item['version'] for item in catalog], ['v1', 'v2', 'v3'])
+        self.assertTrue(all(file['active'] for file in catalog[-1]['files']))
+        self.assertTrue(all(not file['active'] for item in catalog[:-1] for file in item['files']))
+        for stage in ('events', 'opportunities', 'gameplay'):
+            path, text = load_stage_prompt(app.ROOT, stage)
+            self.assertEqual(path.parent.name, 'v22')
+            self.assertNotIn('假设示例', text)
+        text = load_stage_prompt(app.ROOT, 'gameplay')[1]
+        self.assertIn('七种玩法地位平等', text)
+        self.assertNotIn('通常作为备选', text)
 
     def test_readable_storage_artifacts_and_name_collisions(self):
         first = games.generate(self.root, self.payload, self.opener)
@@ -251,11 +276,23 @@ class GameWorkbenchTests(unittest.TestCase):
         with self.assertRaises(games.Conflict):games.generate(self.root, {**self.payload, 'revision': 0}, no_call)
         with patch.dict(os.environ, {'MINIMAX_API_KEY': ''}):
             with self.assertRaisesRegex(ValueError, 'MINIMAX_API_KEY'):games.generate(self.root, self.payload, no_call)
-        for updates in ({'stale': True}, {'review': 'discarded', 'enabled': False, 'confirmed': False}, {'design': None, 'confirmed': False}):
+        for updates in ({'review': 'discarded', 'enabled': False, 'confirmed': False}, {'design': None, 'confirmed': False}):
             changed = copy.deepcopy(self.project);changed['state']['points'][0].update(updates);changed['state']['points'][0]['confirmed'] = False
             saved = self.store.save(changed)
             with self.assertRaises(ValueError):games.generate(self.root, {**self.payload, 'revision': saved['revision']}, no_call)
             self.project = saved
+
+    def test_modified_point_generates_without_manual_review_but_old_game_expires(self):
+        first=games.generate(self.root,self.payload,self.opener)
+        changed=copy.deepcopy(self.project)
+        changed['state']['points'][0].update(time_s=3,stale=True,confirmed=False)
+        saved=self.store.save(changed)
+        with self.assertRaises(ValueError):games.select(self.root,{'generation_id':first['record_id'],'enabled':True})
+        result=games.generate(self.root,{**self.payload,'revision':saved['revision']},self.opener)
+        self.assertEqual(result['status'],'checked')
+        self.assertEqual(result['input']['time_s'],3)
+        games.select(self.root,{'generation_id':result['record_id'],'enabled':True})
+        self.assertEqual(games.selections(self.root,saved['project_id'])[0]['record_id'],result['record_id'])
 
     def test_failed_json_truncation_syntax_and_timeout_kept(self):
         for raw, finish in (('not JSON', 'stop'), ('{}', 'length'), (json.dumps({**output(), 'javascript': 'function mount( {'}), 'stop')):

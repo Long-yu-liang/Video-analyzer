@@ -70,12 +70,15 @@ def game_generation_catalog(root):
     """Read-only generation/repair prompt versions; does not change runtime selection."""
     folder = root / 'prompts/game-generation'
     result = []
-    for version in ('v1', 'v2'):
+    versions = sorted((p.name for p in folder.glob('v*')
+                       if p.is_dir() and re.fullmatch(r'v[1-9]\d*', p.name)),
+                      key=lambda value: int(value[1:]))
+    for version in versions:
         files = []
         for name, label in (('generate.txt', '生成游戏'), ('repair.txt', '修复游戏')):
             path = folder / version / name
             if path.is_file():
-                active = 'v2' if (folder / 'v2' / name).is_file() else 'v1'
+                active = next(v for v in reversed(versions) if (folder / v / name).is_file())
                 files.append({'label': label, 'path': path.relative_to(root).as_posix(),
                               'content': path.read_text(encoding='utf-8').strip(), 'active': version == active})
         if files:

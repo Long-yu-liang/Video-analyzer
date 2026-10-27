@@ -9,6 +9,7 @@ import re
 import secrets
 import tempfile
 import threading
+from ..paths import MAX_VIDEO_SECONDS
 
 LOCK = threading.RLock()
 DESIGN_FIELDS = ('fit', 'player_goal', 'player_action', 'success', 'failure', 'feedback')
@@ -61,7 +62,7 @@ def validate(state):
         text(sample, '样例名', limit=250)
         if '/' in sample or '\\' in sample or sample in ('.', '..'):
             raise ValueError('样例只能使用文件名。')
-        number(video.get('duration_s'), 60, '视频时长')
+        number(video.get('duration_s'), MAX_VIDEO_SECONDS, '视频时长')
     duration = video['duration_s'] if video else 0
     session = state.setdefault('session', {})
     if not isinstance(session, dict) or set(session) - {'events', 'opportunities', 'gameplay', 'settings', 'reviews', 'controls', 'drafts'}:

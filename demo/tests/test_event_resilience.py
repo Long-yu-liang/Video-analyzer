@@ -26,6 +26,33 @@ def response(data):
 
 
 class EventResilienceTests(MockModelTestCase):
+    def test_partial_events_can_feed_second_stage_without_changing_source_status(self):
+        import hashlib
+        from test_gameplay import completion
+        raw=b'fixture-video';identity='a'*32
+        event={**answer()['events'][0],'observation_id':'e7'}
+        parent={'record_id':identity,'stage':'events','status':'failed','video_name':'test.mp4',
+                'video_sha256':hashlib.sha256(raw).hexdigest(),'metadata':{'duration_s':58,'width':320,'height':240,'has_audio':False},
+                'partial_analysis':answer(events=[event],limitations=['部分片段失败']),
+                'error':'tail failed','segment_coverage':{'complete':False}}
+        with tempfile.TemporaryDirectory() as folder,patch.object(app,'ROOT',Path(folder)):
+            path=Path(folder)/f'results/fixture/events__{identity}.json';path.parent.mkdir(parents=True);path.write_text(json.dumps(parent),encoding='utf-8');before=path.read_bytes()
+            restored=app.stage_record(identity)
+            self.assertEqual(restored['status'],'failed');self.assertTrue(restored['partial_input'])
+            self.assertEqual(restored['analysis']['events'][0]['observation_id'],'e7')
+            with patch.object(app,'probe',return_value=parent['metadata']), \
+                 patch.object(app,'extract',return_value=[{'time_s':1.5,'data':'ZmFrZQ=='}]), \
+                 patch.object(app,'load_stage_prompt',return_value=(Path('prompts/v22/opportunities.txt'),'fixture prompt')), \
+                 patch.object(app,'save_record',side_effect=lambda r:r.update(record_file='next.json')), \
+                 patch.object(app,'urlopen',return_value=completion({'interaction_points':[{'observation_id':'e7','opportunity':'参与当前行为','reason':'可见对象'}]})) as cloud:
+                result=app.suggest_opportunities(raw,'test.mp4',identity,['e7'],'v22')
+                self.assertEqual(result['status'],'success',result.get('error'))
+                self.assertTrue(result['partial_event_input']);self.assertEqual(result['parent_status'],'failed')
+                self.assertEqual(cloud.call_count,1)
+                with self.assertRaises(ValueError):app.suggest_opportunities(raw,'test.mp4',identity,['e99'],'v22')
+                self.assertEqual(cloud.call_count,1,'unknown frames never call a model')
+            self.assertEqual(path.read_bytes(),before,'original failed record is not rewritten as successful')
+
     def test_rounding_tolerance_and_raw_preservation(self):
         data=answer(limitations=[])
         data['events'][0].update(start_s=10.009,end_s=11.679,observation_s=10.)

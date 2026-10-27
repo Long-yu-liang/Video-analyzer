@@ -25,6 +25,14 @@ header{padding-top:16px}header h1{font-size:28px}header p{margin-bottom:12px}
 .wb-dialog p{margin:0;padding:0 16px 12px;font-size:13px}
 #tokenDialog .token-usage-row{margin:0 16px}
 .wb-shell{display:block}
+.wb-arrangement-disclosure>summary{cursor:pointer;font-weight:600;font-size:18px}
+.wb-arrangement-content{margin-top:16px}
+#arrangementPlayControls{display:block;margin:12px 0}
+#arrangementPlayControls button{width:100%;margin:0}
+#summary:empty,#reviewHint:empty{display:none}
+#analysisRecordDetails{display:block;margin:12px 0;padding:10px;border:1px solid #ccd4ca;border-radius:8px;font-size:13px}
+#analysisRecordDetails #metrics{margin-top:10px;overflow-wrap:anywhere}
+#analysisRecordDetails pre{height:220px;max-height:30vh;min-width:0;overflow:auto;white-space:pre;overflow-wrap:normal;word-break:normal;max-width:100%;font-size:12px;contain:layout paint;overscroll-behavior:contain;overflow-anchor:none}
 .wb-next-hint{border-left:3px solid #8ca887;padding:8px 12px;margin:8px 0;background:#f1f4ed;font-size:13px}
 .wb-editor-group{border-bottom:1px solid #d9dfd6;padding:12px 0}.wb-editor-group>summary{font-weight:600}
 #wbEditor [aria-invalid=true]{border:2px solid #b44838;background:#fff8f4}

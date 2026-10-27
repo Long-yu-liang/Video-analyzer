@@ -28,7 +28,7 @@ from .catalog import prompts as prompt_catalog
 from .storage import records as record_store
 from . import settings
 
-from .paths import DEMO, ROOT, MAX_VIDEO
+from .paths import DEMO, ROOT, MAX_VIDEO, MAX_MODEL_REQUEST
 
 
 # Configuration is loaded from the private settings file, never from .env.
@@ -171,8 +171,23 @@ def stage_record(record_id):
     if len(matches) != 1:
         raise ValueError('事件记录不存在。' if not matches else '记录 ID 对应多个文件。')
     record = json.loads(matches[0].read_text(encoding='utf-8'))
-    if record.get('record_id') != record_id or record.get('stage') != 'events' or record.get('status') != 'success':
+    if record.get('record_id') != record_id or record.get('stage') != 'events':
         raise ValueError('事件记录不可用于第二阶段。')
+    if record.get('status') != 'success':
+        partial = record.get('partial_analysis')
+        if not isinstance(partial, dict) or not partial.get('events'):
+            raise ValueError('没有可用的已完成事件，请重新识别。')
+        duration = record.get('metadata', {}).get('duration_s')
+        if type(duration) not in (int, float) or not math.isfinite(duration) or duration <= 0:
+            raise ValueError('部分事件缺少有效视频时长。')
+        events, ids = [], set()
+        for index, event in enumerate(partial['events']):
+            item, _ = stage_contracts.validate_event(event, f'partial_analysis.events[{index}]', duration)
+            identity = require_text(item, 'observation_id', f'partial_analysis.events[{index}]')
+            if identity in ids:raise ValueError('部分事件画面 ID 重复，未重新绑定。')
+            ids.add(identity);events.append(item)
+        record['analysis'] = {**partial, 'events': events}
+        record['partial_input'] = True
     record['record_file'] = matches[0].relative_to(ROOT).as_posix()
     return record
 
@@ -209,31 +224,35 @@ def analyze_segment(path, folder, core_start, core_end, clip_start, clip_end,
                     prompt, key, parent, depth=0):
     model = parent.get('model') or 'qwen3-vl-plus'
     mode = parent.get('mode') or 'direct'
+    request_mode = 'frames' if mode == 'direct' and clip_end-clip_start < 5. else mode
     fps = parent.get('fps') or 2.
     output = folder / f'segment-{len(parent["segments"])+1}.mp4'
     segment = {'core_start_s': core_start, 'core_end_s': core_end,
                'clip_start_s': clip_start, 'clip_end_s': clip_end,
                'sent_audio': False, 'fps': fps, 'status': 'failed',
                'preprocessing_status': 'processing'}
+    segment.update(requested_mode=mode,mode=request_mode)
+    if request_mode != mode:
+        segment['input_fallback_reason'] = '短片段不足 5 秒，调用前改用顺序抽帧，避免视频接口最小时长限制。'
     parent['segments'].append(segment)
     try:
         source_metadata = parent['metadata']
         full_source = (source_metadata['duration_s'] <= 25. and clip_start == 0.
                        and abs(clip_end - source_metadata['duration_s']) <= 1e-6
-                       and (mode == 'frames' or source_metadata.get('video_codec') == 'h264'))
+                       and (request_mode == 'frames' or source_metadata.get('video_codec') == 'h264'))
         if full_source:
-            segment['preprocessing_method'] = ('original_frames' if mode == 'frames' else
+            segment['preprocessing_method'] = ('original_frames' if request_mode == 'frames' else
                 'stream_copy_without_audio' if source_metadata['has_audio'] else 'original_video')
-            clip, metadata, method = prepare_full_video(path, output, source_metadata, mode)
+            clip, metadata, method = prepare_full_video(path, output, source_metadata, request_mode)
         else:
             segment['preprocessing_method'] = 'segment_transcode'
             clip_video(path, output, clip_start, clip_end)
             clip, metadata, method = output, probe(output), 'segment_transcode'
         if not clip.is_file() or not 0 < clip.stat().st_size <= MAX_VIDEO:
-            raise MediaProcessingError('verify', code='invalid_output', message='预处理视频为空或超过 12 MiB，未调用模型。')
+            raise MediaProcessingError('verify', code='invalid_output', message='预处理视频为空或超过 30 MiB，未调用模型。')
         segment.update(preprocessing_method=method, preprocessing_status='success', metadata=metadata,
                        clip_sha256=hashlib.sha256(clip.read_bytes()).hexdigest(), sent_video_bytes=clip.stat().st_size)
-        if mode == 'frames':
+        if request_mode == 'frames':
             frame_dir = folder / f'frames-{len(parent["segments"])}'
             frame_dir.mkdir()
             frames = extract(clip, frame_dir, metadata['duration_s'], fps)
@@ -305,6 +324,8 @@ def deduplicate_segment_events(events):
 
 def analyze_events_segmented(path, folder, metadata, prompt, key, record):
     record['segments'] = []
+    record['segment_policy'] = {'target_core_seconds':20,'merge_tail_below_seconds':5,
+                                'short_direct_input':'frames_before_call'}
     record['segment_plan'] = [{'start_s': start, 'end_s': end}
                               for start, end, _, _ in segment_windows(metadata['duration_s'])]
     for start, end, clip_start, clip_end in segment_windows(metadata['duration_s']):
@@ -322,6 +343,8 @@ def summarize_event_segments(record, complete=False):
                  for item in successful]
     limitations = (['长视频分段识别；相邻片段重叠约 1 秒，事件按代表画面归入唯一时间段。']
                    if metadata['duration_s'] > 25. else ['短视频按完整画面时间轴识别；图片或视频输入均不分析音轨。'])
+    if any(item.get('input_fallback_reason') for item in record['segments']):
+        limitations.append('不足 5 秒的短片段在调用前改用顺序抽帧；不含声音，实际输入方式见各片段记录。')
     for item in successful:
         limitations.extend(f"{item['clip_start_s']:g}秒片段：{value}" for value in item['analysis']['limitations'])
     warnings = [{**warning, 'core_start_s': item['core_start_s'], 'core_end_s': item['core_end_s']}
@@ -331,7 +354,7 @@ def summarize_event_segments(record, complete=False):
         key: sum(item['analysis'].get('validation_summary', {}).get(key, 0) for item in successful)
         for key in ('returned_count', 'accepted_count', 'rejected_count')}
     if not complete:
-        limitations.insert(0, '仅展示已通过校验的片段，不代表全片分析成功；不能直接用于第二步。')
+        limitations.insert(0, '仅包含已完成片段，不代表全片分析成功；可选择这些事件继续第二步，失败区间未补造。')
     if successful:
         analysis = validate_stage_events(json.dumps({'summary': '；'.join(summaries),
                                                            'events': all_events, 'limitations': limitations},
@@ -377,7 +400,7 @@ def analyze_events(raw, video_name, version='v13', model='qwen3-vl-plus', mode='
     if not key:
         raise ValueError('尚未配置 BEEROUTE_API_KEY。')
     if not raw or len(raw) > MAX_VIDEO:
-        raise ValueError('视频须为非空 MP4，大小不超过 12 MiB。')
+        raise ValueError('视频须为非空 MP4，大小不超过 30 MiB。')
     prompt_path, prompt = load_stage_prompt('events', version)
     started = time.perf_counter()
     record = {'record_id': secrets.token_hex(16), 'stage': 'events', 'created_at': datetime.now(timezone.utc).isoformat(),
@@ -391,7 +414,7 @@ def analyze_events(raw, video_name, version='v13', model='qwen3-vl-plus', mode='
             path.write_bytes(raw)
             metadata = probe(path)
             record['metadata'] = metadata
-            if version == 'v14':
+            if version in ('v14', 'v22'):
                 record['sent_audio'] = False
                 record['preprocess_s'] = round(time.perf_counter() - started, 3)
                 analyze_events_segmented(path, folder, metadata, prompt, key, record)
@@ -507,6 +530,9 @@ def suggest_opportunities(raw, video_name, record_id, selected_ids, version=None
               'video_sha256': parent['video_sha256'], 'video_bytes': len(raw),
               'prompt_file': f'prompts/{prompt_path.parent.name}/{prompt_path.name}', 'prompt': prompt,
               'selected_event_ids': selected_ids, 'status': 'failed', 'sent_audio': False}
+    if parent.get('partial_input'):
+        record.update(partial_event_input=True, parent_status=parent.get('status'),
+                      parent_segment_coverage=parent.get('segment_coverage'))
     try:
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp)
@@ -517,6 +543,8 @@ def suggest_opportunities(raw, video_name, record_id, selected_ids, version=None
             frames = extract(path, folder, metadata['duration_s'], 2.)
             observations = []
             content = [{'type': 'text', 'text': prompt}]
+            if parent.get('partial_input'):
+                content.append({'type':'text','text':'第一步仅完成部分视频区间。本次只分析已选择事件和对应图片，不推测失败或未处理区间，也不声称覆盖全片。'})
             reviewed_only = int(prompt_path.parent.name[1:]) >= 21
             if reviewed_only:
                 allowed_ids = [e['observation_id'] for e in parent['analysis']['events'] if e['observation_id'] in selected_ids]
@@ -890,7 +918,7 @@ def analyze(raw, model, mode, fps, video_name, prompt_version=None):
     if not key:
         raise ValueError(f'尚未配置 {keyname}。没有调用模型，也没有生成分析结果。')
     if not raw or len(raw) > MAX_VIDEO:
-        raise ValueError('视频须为非空 MP4，大小不超过 12 MiB。')
+        raise ValueError('视频须为非空 MP4，大小不超过 30 MiB。')
     prompt_path, prompt = load_prompt(prompt_version)
     start = time.perf_counter()
     record = {'created_at': datetime.now(timezone.utc).isoformat(), 'model': model, 'mode': mode,
@@ -912,7 +940,7 @@ def analyze(raw, model, mode, fps, video_name, prompt_version=None):
             record['sent_video_bytes'] = len(request_video)
             url, body, audio_requested = build_request(model, mode, fps, base64.b64encode(request_video).decode(), frames, metadata, prompt)
             payload = json.dumps(body).encode()
-            if len(payload) > 19 * 1024 * 1024:
+            if len(payload) > MAX_MODEL_REQUEST:
                 raise ValueError('编码后请求过大，请压缩视频或降低抽帧率。')
             record['request_bytes'] = len(payload)
             record['request_options'] = {'fps': fps, 'response_format': body.get('response_format')}

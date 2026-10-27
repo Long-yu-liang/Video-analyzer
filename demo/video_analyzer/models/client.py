@@ -3,6 +3,7 @@ import json
 import time
 from urllib.request import Request
 from urllib.error import HTTPError
+from ..paths import MAX_MODEL_REQUEST
 
 
 class TruncatedOutputError(ValueError):
@@ -21,7 +22,7 @@ def call_v13_model(url, body, key, record, opener, count_modalities, output_pars
     started = time.perf_counter()
     for attempt in range(2):
         payload = json.dumps(body).encode()
-        if len(payload) > 19 * 1024 * 1024:
+        if len(payload) > MAX_MODEL_REQUEST:
             raise ValueError('编码后请求过大，请减少审核画面或压缩视频。')
         record['request_bytes'] = len(payload)
         record['request_options'] = {'fps': record['fps'], 'response_format': body.get('response_format'),

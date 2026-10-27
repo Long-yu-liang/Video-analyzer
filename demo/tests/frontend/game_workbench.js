@@ -7,7 +7,8 @@ assert.deepEqual(JSON.parse(JSON.stringify(context.GameWorkbench.fitSize(300,600
 const record={input:JSON.parse(JSON.stringify(point)),output:{javascript:'function mount(c,a){return {destroy(){}}} // </script><img src=x>',css:'#game{color:red}'}};
 assert.equal(context.GameWorkbench.matches(record,point),true);
 assert.equal(context.GameWorkbench.matches(record,{...point,time_s:3}),false);
-assert.equal(context.GameWorkbench.matches(record,{...point,stale:true}),false);
+assert.equal(context.GameWorkbench.matches(record,{...point,stale:true}),true,'legacy review flag alone does not block a matching game');
+assert.equal(context.GameWorkbench.matches(record,{...point,stale:true,time_s:3}),false,'changed input still invalidates the old game');
 const html=context.GameWorkbench.iframeDocument(record,'test-session');
 assert.match(html,/connect-src 'none'/);assert.match(html,/frame-src 'none'/);assert.ok(!html.includes('<img src=x>'));
 const bootstrap=html.match(/<script nonce="[^"]+">([\s\S]*)<\/script>/)[1];
@@ -70,6 +71,8 @@ vm.runInContext(source.replace('root.GameWorkbench={','root.modalTest={open:open
 modalContext.modalTest.open(record);
 let theaterState=modalContext.modalTest.get();
 assert.equal(stage.parentNode,theaterState.player);assert.equal(stage.children[0],media);
+assert.equal(theaterState.timeline.parentNode,theaterState.player.parentNode,'timeline belongs to video/description grid, not full-width shell');
+assert.equal(theaterState.info.parentNode,theaterState.timeline.parentNode,'description shares both grid rows beside video and timeline');
 assert.ok(Math.abs(parseFloat(stage.style.width)-500*16/9)<0.001);
 theaterState.shell.children[0].children[2].onclick();
 assert.equal(modalDoc.fullscreenElement,theaterState.shell,'full screen targets a div, never the dialog');
@@ -122,6 +125,18 @@ detailsContext.versionTest.clearDraftMemory();detailsContext.versionTest.open(ve
 assert.equal(detailsContext.versionTest.get().note.value,'未提交的修复要求','session storage restores note after in-memory cache is cleared');
 detailsContext.versionTest.close();
 console.log('Game version detail modal, replacement, Esc and focus restoration checks passed');
+const failedRecord={...versionRecord,record_id:'failed-with-raw',status:'failed',output:null,error:'设计段为空',
+  raw_text:'<<<GAME_DESIGN>>>\n<<<END_GAME_DESIGN>>>',parse_error:{message:'invalid_sections'},failure_details:{empty_sections:['GAME_DESIGN']}};
+detailsContext.versionTest.open(failedRecord,versionContext);
+const failedModal=detailsContext.versionTest.get(),failedNodes=walk(failedModal.body);
+assert.ok(failedModal.note.value.includes(failedRecord.error),'repair note starts with original error');
+assert.ok(failedNodes.some(n=>n.textContent==='原始报错'));
+assert.ok(failedNodes.some(n=>n.textContent==='查看具体校验诊断'));
+const originalSummary=failedNodes.find(n=>n.textContent==='查看模型原始返回');
+const originalDetails=originalSummary.parentNode,rawNode=originalDetails.children[1];
+assert.ok(!rawNode.textContent,'raw response is lazy');
+originalDetails.open=true;originalDetails.listeners.toggle();assert.equal(rawNode.textContent,failedRecord.raw_text);
+detailsContext.versionTest.close();
 const inventory={points:[{point_id:'p1',time_s:1,title:'操作一',versions:[{record_id:'v1',usable:true,title:'游戏一'}]},
   {point_id:'p2',time_s:5,title:'操作二',versions:[{record_id:'v2',usable:false,stale:true,title:'过期游戏'}]}]};
 const check=detailsContext.versionTest.check;
@@ -132,7 +147,7 @@ assert.ok(check(inventory,[{point_id:'p2',generation_id:'v2',enabled:true}],true
 assert.ok(check(inventory,[{point_id:'p1',generation_id:'v1',enabled:true}],false).errors.some(e=>e.view==='analysis'));
 const collision=JSON.parse(JSON.stringify(inventory));collision.points[1].time_s=1;
 assert.ok(check(collision,[{point_id:'p1',generation_id:'v1',enabled:true},{point_id:'p2',generation_id:'v2',enabled:true}],true).errors.some(e=>e.text.includes('时间相同')));
-assert.ok(check(inventory,[{point_id:'p1',generation_id:'v1',enabled:true}],true,[{id:'p1',time_s:2,review:'kept'}]).errors.some(e=>e.view==='edit'));
+assert.ok(check(inventory,[{point_id:'p1',generation_id:'v1',enabled:true}],true,[{id:'p1',time_s:2,review:'kept'}]).errors.some(e=>e.view==='opportunities'));
 console.log('Arrangement preflight: no selection, missing/stale versions, video mismatch and time collisions OK');
 const nextRecord=JSON.parse(JSON.stringify(record));record.record_id='first';nextRecord.record_id='second';nextRecord.point_id='next';nextRecord.input.id='next';nextRecord.input.time_s=5;
 runtime.test.autoSetup([record,nextRecord]);video.currentTime=2.2;video.paused=false;video.seeking=false;
@@ -141,3 +156,26 @@ assert.equal(runtime.autoCalls[0].auto,true,'sequence starts game without per-po
 runtime.test.resume();video.currentTime=5.2;runtime.test.tick();assert.equal(runtime.autoCalls.length,2);
 assert.equal(runtime.autoCalls[1].id,'second');assert.equal(runtime.autoCalls[1].auto,true);
 console.log('Game workbench two-point automatic sequence crossing checks passed');
+
+// Preview opens without a project/game, while seeking a playable point can replay it.
+(async()=>{
+  const previewVideo={src:'fixture.mp4',currentTime:2,paused:true,pause(){this.paused=true;},play(){this.paused=false;return Promise.resolve();}};
+  const ctx={document:{getElementById:id=>id==='video'?previewVideo:null},console,fetch:()=>{throw Error('preview without a project must not request a model or records');}};
+  vm.createContext(ctx);
+  vm.runInContext(source.replace('root.GameWorkbench={',`root.previewTest={
+    setup(){current=()=>({verified:false,project:null,state:{points:[]}});openTheater=r=>{theater={record:r,status:{}};};renderPlaybackMarkers=()=>{};updatePlaybackTimeline=()=>{};},
+    start:startSequence,get:()=>({theater,sequence}),seek:seekPlayback,
+    games(rows){sequence.games=rows;root.started=[];play=async r=>{root.started.push(r.record_id);};}
+  };root.GameWorkbench={`),ctx);
+  ctx.previewTest.setup();await ctx.previewTest.start();
+  assert.equal(previewVideo.paused,false,'no-game preview still plays video');
+  assert.equal(ctx.previewTest.get().theater.record,null,'no fabricated generation is needed');
+  assert.equal(ctx.previewTest.get().sequence.games.length,0);
+  ctx.previewTest.games([{record_id:'seek-game',input:{time_s:5}}]);
+  ctx.previewTest.seek(5);await Promise.resolve();await Promise.resolve();
+  assert.equal(ctx.started.length,1,'seeking onto a point starts its game');
+  ctx.previewTest.seek(5);await Promise.resolve();await Promise.resolve();
+  assert.equal(ctx.started.length,2,'explicitly revisiting the same point can replay it');
+  ctx.previewTest.seek(9);await Promise.resolve();assert.equal(ctx.started.length,2,'unmarked positions only seek');
+  console.log('Unrestricted no-game preview and seek-to-game/replay checks passed');
+})().catch(error=>{console.error(error);process.exitCode=1;});

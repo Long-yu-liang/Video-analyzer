@@ -66,23 +66,25 @@
 <div class="note" id="configState">正在检查配置…</div>
 <main class="grid"><section id="inputPanel"><h2>视频回看</h2><div class="wb-media-source">
 <label for="sample">mp4-example</label><select id="sample"></select>
-<label for="file">或上传其他 MP4 · 最长 60 秒 / 12 MiB</label><input id="file" type="file" accept="video/mp4">
+<label for="file">或上传其他 MP4 · 最长 120 秒 / 30 MiB</label><input id="file" type="file" accept="video/mp4">
 </div><details class="wb-player-preview" open><summary>定位画面 / 收起视频</summary><div id="videoStage"><video id="video" controls></video><div id="gameOverlay" hidden></div></div></details>
+<div id="arrangementPlayControls" aria-label="编排试玩控制"></div>
+<details id="analysisRecordDetails"><summary>分析记录与原始响应</summary><div id="metrics"></div><button id="download" disabled>导出当前完整记录</button><pre id="raw">暂无分析记录，请先分析视频或打开已有项目。</pre></details>
 <div id="modelControls"><label for="model">模型</label><select id="model"></select></div>
 <div id="analysisControls">
 <label for="mode">第一步输入方式</label><select id="mode"><option value="frames">顺序采样画面 + 真实时间戳（不含声音）</option><option value="direct" selected>直接视频（声音能力取决于模型）</option></select>
 <label for="fps">第一步采样率</label><select id="fps"><option>0.5</option><option>1</option><option selected>2</option></select>
 <button id="recognize" disabled>识别可观察事件</button><button id="reset" class="ghost" type="button">刷新重置</button></div>
 <div class="status" id="status" role="status" aria-live="polite"></div></section>
-<section id="eventResults"><h2>可观察事件</h2><p id="summary">尚未调用模型。没有预置分析结果。</p><p class="note" id="reviewHint">先识别事件。采样率和输入方式只用于第一步。可以取消勾选失实事件，再运行第二步。</p><div id="events"></div><ul id="limitations"></ul><button type="button" data-wb-go="opportunities">下一步：寻找交互机会 →</button></section>
+<section id="eventResults"><h2>可观察事件</h2><p id="summary"></p><p class="note" id="reviewHint"></p><div id="events"></div><ul id="limitations"></ul><button type="button" data-wb-go="opportunities">下一步：寻找交互机会 →</button></section>
 <section id="analysisResults"><h2>寻找交互机会</h2><p>根据第一步勾选的事件及对应画面寻找参与位置；未识别事件或未选中事件时不能调用。</p><button id="suggest" disabled>寻找交互机会</button><button type="button" class="ghost" data-wb-go="analysis">返回检查事件</button><h3>候选交互点</h3><div id="points"></div><button type="button" data-wb-go="design">下一步：选择玩法 →</button></section>
-<section id="wbTimelinePanel"><h2>项目时间轴</h2><button type="button" id="addManualPoint" class="ghost">在当前播放位置人工新增交互点</button><div id="wbTimeline"></div></section>
-<section id="wbPointSettings"><h2>交互点设置</h2><div id="wbPointSettingsBody"></div></section>
+<section id="wbTimelinePanel" hidden inert style="display:none!important"><div id="wbTimeline"></div></section>
+<section id="wbPointSettings"><h2>交互点设置</h2><button type="button" id="addManualPoint" class="ghost">在当前播放位置人工新增交互点</button><div id="wbPointSettingsBody"></div></section>
 <section id="wbRecommendationActions"><h2>为交互点推荐玩法</h2><p>使用当前选择的模型和玩法提示词，为勾选的候选点推荐方案；调用前可回到分析页检查设置。</p><button id="recommend" disabled>推荐小游戏</button></section>
 <div id="wbDesign" class="wb-grid"><aside id="wbPointList" class="wb-point-list"></aside><section id="wbEditor"></section></div>
 <section id="wbArrange"><div id="wbArrangement"></div></section>
-<section id="legacyGameplayPanel"><details><summary>历史方案编辑器</summary><div class="note" id="catalogNote">正在加载小游戏目录…</div><div id="gameplay"></div><button id="saveBrief" disabled>保存玩法描述</button></details></section>
-<section id="wbRecordsPanel"><details><summary>查看分析记录与原始响应</summary><div id="metrics"></div><button id="download" disabled>导出当前完整记录</button><pre id="raw">暂无</pre><p class="note">模型原始记录保持不变。第二步可能看到多个时间点，请回看核实理由是否借用了未来信息。</p></details></section></main>
+</main>
+<div id="legacyCompatibility" hidden inert style="display:none!important"><div id="catalogNote"></div><div id="gameplay"></div><button id="saveBrief" disabled></button></div>
 </div></div>
 <link rel="stylesheet" href="/assets/css/gameplay.css">
 <script src="/assets/js/token-usage.js"></script>
@@ -93,4 +95,5 @@
 <script src="/assets/js/game-workbench.js"></script>
 <script src="/assets/js/workbench.js"></script>
 <link rel="stylesheet" href="/assets/css/validation.css">
+<script src="/assets/js/record-preview.js"></script>
 <script src="/assets/js/app.js"></script></html>

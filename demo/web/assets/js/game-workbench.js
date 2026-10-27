@@ -6,8 +6,10 @@
   let libraryHost=null, libraryKey='', libraryEpoch=0;
   let arrangementDraft=null;
   let versionDialog=null;
+  let generationDialog=null,generationEpoch=0;
   let returnToVersion=null, libraryRenderedProject=null;
   let taskHost=null,taskTimer=null,taskProject=null,taskEpoch=0;
+  let taskDisclosure=null,taskList=null,taskSummary=null,taskDisclosureProject=null,taskCount=0,taskActive=0;
   const taskStates=new Map();
   const versionDrafts=new Map(),libraryExpansion=new Map();
   const $=id=>document.getElementById(id);
@@ -19,7 +21,7 @@
     const r=await fetch(url,{method:payload?'POST':'GET',headers:{'X-Local-Token':current().token,...(payload?{'Content-Type':'application/json'}:{})},...(payload?{body:JSON.stringify(payload)}:{})});
     const value=await r.json();if(!r.ok)throw Error(value.error||'游戏工作台请求失败');return value;
   }
-  function showError(error){const host=versionDialog?.dialog.open?versionDialog.body:panel;
+  function showError(error){const host=generationDialog?.dialog.open?generationDialog.body:versionDialog?.dialog.open?versionDialog.body:panel;
     if(host){const p=element('p',error.message||String(error));p.className='gw-warning';host.append(p);}
     if(theater)theater.status.textContent=error.message||String(error);}
   function draftKey(record,context){return `video-analyzer:version-note:${context.project.project_id}:${record.record_id}`;}
@@ -40,6 +42,24 @@
     const old=versionDialog;versionDialog=null;
     old.dialog.close();old.dialog.remove();
     if(old.focus?.isConnected)old.focus.focus();
+  }
+  function closeGenerationDialog(){
+    if(!generationDialog)return;
+    const old=generationDialog;generationDialog=null;generationEpoch++;
+    old.dialog.close();old.dialog.remove();
+    if(old.focus?.isConnected)old.focus.focus();
+  }
+  function generationHost(context){
+    const name=`生成小游戏 · ${context.point.design?.title||context.point.id} · ${context.point.time_s.toFixed(2)} 秒`;
+    if(generationDialog){generationDialog.project=context.project.project_id;generationDialog.title.textContent=name;generationDialog.body.replaceChildren();return generationDialog.body;}
+    const dialog=element('dialog');dialog.className='gw-version-dialog gw-generation-dialog';dialog.setAttribute('aria-labelledby','gameGenerationTitle');
+    const header=element('div');header.className='gw-version-header';
+    const title=element('h2',name);title.id='gameGenerationTitle';const close=button('关闭生成窗口',closeGenerationDialog);header.append(title,close);
+    const body=element('div');body.className='gw-version-body';dialog.append(header,body);
+    generationDialog={dialog,body,title,project:context.project.project_id,focus:document.activeElement};
+    dialog.addEventListener('cancel',event=>{event.preventDefault();closeGenerationDialog();});
+    dialog.addEventListener('close',()=>{if(generationDialog?.dialog===dialog)closeGenerationDialog();});
+    document.body.append(dialog);dialog.showModal();close.focus();return body;
   }
   function versionHost(record,context) {
     if(versionDialog){
@@ -63,7 +83,7 @@
   }
   function inputView(point){return {time_s:point.time_s,opportunity:point.opportunity,reason:point.reason,design:point.design,brief:point.brief||{},selected:point.selected};}
   function matches(record,point) {
-    if(!point||point.review!=='kept'||point.stale||point.merged_into)return false;
+    if(!point||point.review!=='kept'||point.merged_into)return false;
     const a=inputView(point),b=record.input;
     return ['time_s','opportunity','reason','design','brief','selected'].every(k=>JSON.stringify(a[k])===JSON.stringify(b[k]));
   }
@@ -74,13 +94,18 @@
     outer.append(taskHost,element('h2','项目游戏库'),libraryHost,panel);
     panel.append(element('p','生成结果自动保存，无需再次保存代码；采用版本单独保存。打开游戏库即可查看和试玩，不必重新调用模型。'));
     refreshLibrary();
+    scheduleTasks(true);
+    const playControls=$('arrangementPlayControls');
+    if(playControls)playControls.replaceChildren(button('开始编排试玩 / 打开大屏',startSequence));
     root.addEventListener('message',onMessage);
     const video=$('video');video.addEventListener('timeupdate',onTime);
     video.addEventListener('seeking',()=>{if(movingPlayer)return;if(sequence)sequence.last=null;
       if(session&&!session.positioning)closeGame('exit','播放位置改变',false);});
-    video.addEventListener('seeked',()=>{if(sequence)sequence.last=video.currentTime;if(session)session.positioning=false;});
+    video.addEventListener('seeked',()=>{if(sequence)sequence.last=video.currentTime;if(session)session.positioning=false;updatePlaybackTimeline();
+      if(sequence&&!session&&!sequence.triggering){const record=sequence.games.find(r=>Math.abs(r.input.time_s-video.currentTime)<=0.4);if(record)triggerSequenceGame(record);}});
     video.addEventListener('emptied',()=>{if(movingPlayer)return;sequence=null;closeGame('exit','视频切换',false);if(theater)dismissTheater();});
     video.addEventListener('loadedmetadata',fitTheater);
+    video.addEventListener('loadedmetadata',()=>{renderPlaybackMarkers();updatePlaybackTimeline();});
   }
   async function mutate(url,payload) {
     const initial=current();if(busy||initial.busy||session||sequence)throw Error('请先结束生成、保存或试玩，再操作');
@@ -89,7 +114,7 @@
     if(now.project?.project_id!==projectId)throw Error('项目已切换');
     const value=await request(url,{...payload,project_id:projectId,revision:now.project.revision});
     if(current().project?.project_id===projectId&&value.project){arrangementDraft=null;current().applyProject?.(value.project);}
-    refreshLibrary();return value;
+    refreshLibrary();scheduleTasks(true);return value;
   }
   async function selectVersion(pointId,recordId,enabled) {
     return mutate('/arrangement',{entries:[{point_id:pointId,generation_id:recordId,enabled}]});
@@ -133,10 +158,7 @@
         if(!result.errors.length)checkHost.append(element('p','本地检查通过；开始前仍会保存，并由服务端核对实际版本。'));
         return result;
       };
-      host.append(note,button('保存编排',async()=>{await saveArrangement();}),button('开始编排试玩',async()=>{
-        if(drawCheck().errors.length){note.textContent='请先处理下方检查项；尚未开始试玩。';checkHost.scrollIntoView({block:'nearest'});return;}
-        await saveArrangement();await startSequence();
-      }),checkHost);
+      host.append(note,button('保存编排',async()=>{await saveArrangement();}),checkHost);
       data.points.forEach(p=>{
         let entry=arrangementDraft.entries.find(e=>e.point_id===p.point_id);
         if(!entry){entry={point_id:p.point_id,generation_id:p.selected_generation_id||null,enabled:p.enabled};arrangementDraft.entries.push(entry);}
@@ -171,7 +193,7 @@
       if(!entry.generation_id)fail('尚未选择游戏版本');
       else if(!version)fail('采用的游戏版本已缺失');
       else if(!version.usable)fail(version.stale?'输入已变化，需要重新核对或生成':'所选版本未通过检查');
-      else if(point&&(point.stale||point.review!=='kept'||point.merged_into||point.time_s!==p.time_s))fail('当前方案或位置需要核对','edit');
+      else if(point&&(point.review!=='kept'||point.merged_into||point.time_s!==p.time_s))fail('当前交互点已停用、合并或位置不同','opportunities');
       else item.message=`将播放 ${version.title}`;
       if(times.has(p.time_s)){fail('与其他启用点时间相同，请错开或停用','edit');}
       times.set(p.time_s,p.point_id);
@@ -245,18 +267,19 @@
     context={...context,point:JSON.parse(JSON.stringify(context.point))};
     if(theater)dismissTheater();
     if(session)closeGame('exit','切换玩点',false);
+    closeVersionDialog();
     const {project,point}=context;
-    selectedRecord=null;panel.replaceChildren(element('h2',`游戏工作台 / ${point.design?.title||point.id} · ${point.time_s.toFixed(2)} 秒`));
-    panel.append(element('p','一次 MiniMax 调用补全详细设计及 JS。只提交下面这个点的文字，不发送视频或截图。'));
+    selectedRecord=null;const body=generationHost(context),epoch=++generationEpoch;
+    body.append(element('p','一次 MiniMax 调用补全详细设计及 JS。只提交下面这个点的文字，不发送视频或截图。关闭窗口不会取消已提交的任务。'));
     const summary=element('div');summary.className='gw-input-summary';
     for(const [label,value] of [['方案',point.design?.title],['玩法',point.design?.game_id],['位置',point.time_s+' 秒'],['参与行为',point.opportunity],['玩家目标',point.design?.player_goal],['操作',point.design?.player_action]])summary.append(element('p',`${label}：${value||'未填写'}`));
-    const raw=element('details');raw.append(element('summary','查看本次完整输入 JSON'),element('pre',JSON.stringify(inputView(point),null,2)));panel.append(summary,raw);
-    panel.append(button('确认输入并生成此点',()=>generate(context)),button('刷新该点生成历史',()=>showPoint(context)),
+    const raw=element('details');raw.append(element('summary','查看本次完整输入 JSON'),element('pre',JSON.stringify(inputView(point),null,2)));body.append(summary,raw);
+    body.append(button('确认输入并生成此点',()=>generate(context)),button('刷新该点生成历史',()=>showPoint(context)),
       button('重新开始串联试玩',()=>startSequence()));
     const records=await request(`/game-generation?project_id=${project.project_id}&point_id=${encodeURIComponent(point.id)}`);
-    const history=element('div');history.className='gw-history';panel.append(history);
+    if(!generationDialog||generationDialog.body!==body||generationEpoch!==epoch)return;
+    const history=element('div');history.className='gw-history';body.append(history);
     records.filter(r=>r.stage==='game_generation').forEach(r=>history.append(button(`${r.created_at} · ${r.status==='checked'?'检查通过，未等同试玩通过':'失败'}`,async()=>display(await request('/game-generation?id='+r.record_id),context))));
-    panel.scrollIntoView({block:'start',behavior:'smooth'});
   }
   async function generate(context,parent=null,problem='') {
     if(busy||current().busy)throw Error('正在生成或分析，请稍后');
@@ -265,11 +288,12 @@
     if(!p||JSON.stringify(inputView(p))!==JSON.stringify(inputView(context.point)))throw Error('玩法已变化，请重新保存并选择');
     if(!root.confirm(parent?'确认为该点调用一次 MiniMax 修复？':'确认为此点调用一次 MiniMax？不会生成其他点。'))return;
     busy=true;document.querySelectorAll('[data-game-generate]').forEach(b=>b.disabled=true);
-    const status=element('p','正在提交后台生成任务…');(versionDialog?.dialog.open?versionDialog.body:panel).append(status);
+    const status=element('p','正在提交后台生成任务…');(generationDialog?.dialog.open?generationDialog.body:versionDialog?.dialog.open?versionDialog.body:panel).append(status);
     try {
       await request('/game-tasks',{project_id:now.project.project_id,revision:now.project.revision,point_id:p.id,...(parent?{generation_id:parent.record_id,problem}:{})});
       status.textContent='任务已提交，可切换页面。请在生成任务中查看状态；关闭此面板不取消调用。';
       scheduleTasks(true);
+    }catch(error){status.textContent='任务未提交：'+(error.message||String(error));throw error;
     }finally{busy=false;document.querySelectorAll('[data-game-generate]').forEach(b=>b.disabled=false);}
   }
   function scheduleTasks(immediate=false){
@@ -278,12 +302,19 @@
   }
   async function refreshTasks(){
     const project=current().project?.project_id,epoch=taskEpoch;
-    if(!project){taskHost.replaceChildren();return;}
+    if(!project){taskHost.replaceChildren();taskDisclosure=null;return;}
     try{
       const tasks=await request('/game-tasks?project_id='+project);
       if(project!==current().project?.project_id||epoch!==taskEpoch)return;
-      taskHost.replaceChildren();
-      if(tasks.length)taskHost.append(element('h3','游戏生成任务'),element('p','可切换页面或刷新，任务由本地服务继续执行。请勿关闭服务；关闭面板不等于取消计费。'));
+      if(!tasks.length){taskHost.replaceChildren();taskDisclosure=null;scheduleTasks();return;}
+      if(!taskDisclosure||taskDisclosureProject!==project){
+        taskDisclosureProject=project;taskDisclosure=element('details');taskDisclosure.className='gw-task-disclosure';
+        taskSummary=element('summary');taskList=element('div');
+        taskDisclosure.append(taskSummary,element('p','任务由本地服务继续执行。移除已结束任务只隐藏此处记录，游戏版本仍在游戏库；关闭面板不会取消正在进行的调用。'),taskList);
+        taskHost.replaceChildren(taskDisclosure);taskDisclosure.addEventListener('toggle',updateTaskSummary);
+      }
+      taskCount=tasks.length;taskActive=tasks.filter(t=>['queued','waiting_model','checking','saving'].includes(t.status)).length;
+      updateTaskSummary();taskList.replaceChildren();
       const labels={queued:'已提交，准备生成',waiting_model:'等待模型返回',checking:'检查结构与语法',saving:'保存产物',completed:'已完成，尚不代表试玩通过',failed:'失败',interrupted:'服务中断，未自动重试'};
       for(const task of tasks){
         const active=['queued','waiting_model','checking','saving'].includes(task.status);
@@ -298,13 +329,24 @@
           if(!point)throw Error('该交互点已移除，请从游戏库查看记录');
           display(r,{project:now.project,point});
         }));
-        taskHost.append(card);
+        if(!active)card.append(button('移除任务',async()=>{
+          await request('/game-task-dismiss',{project_id:project,task_id:task.task_id});await refreshTasks();
+        }));
+        if(task.status==='failed'&&task.generation_id)card.append(button('本地检查并恢复代码（不调用模型）',async()=>{
+          await current().beforeMutation?.();const now=current();if(now.project?.project_id!==project)return;
+          const r=await request('/game-reparse',{project_id:project,revision:now.project.revision,generation_id:task.generation_id});
+          if(current().project?.project_id!==project)return;
+          const point=current().state.points.find(p=>p.id===task.point_id);
+          if(point)display(r,{project:current().project,point});refreshLibrary();
+        }));
+        taskList.append(card);
         const previous=taskStates.get(task.task_id);taskStates.set(task.task_id,task.status);
         if(previous&&previous!==task.status&&!active){showError({message:`${task.title}：${labels[task.status]}。请查看生成任务。`});refreshLibrary();}
       }
       scheduleTasks();
-    }catch(error){if(project===current().project?.project_id){taskHost.replaceChildren(element('p','任务状态暂时无法读取，请勿重新生成；稍后自动恢复检查。'));clearTimeout(taskTimer);taskTimer=setTimeout(refreshTasks,5000);}}
+    }catch(error){if(project===current().project?.project_id&&epoch===taskEpoch){taskHost.replaceChildren(element('p','任务状态暂时无法读取，请勿重新生成；稍后自动恢复检查。'));taskDisclosure=null;clearTimeout(taskTimer);taskTimer=setTimeout(refreshTasks,5000);}}
   }
+  function updateTaskSummary(){if(taskSummary&&taskDisclosure)taskSummary.textContent=`游戏生成任务 · ${taskCount} 项 · ${taskActive} 项进行中 · ${taskDisclosure.open?'收起任务':'展开全部任务'}`;}
   function renderGameDesign(record) {
     const design=record.output?.design;
     if(!design||typeof design!=='object')return element('p','此版本暂无完整玩法说明。');
@@ -331,10 +373,21 @@
     return section;
   }
   function display(record,context) {
+    closeGenerationDialog();
     selectedRecord=record;
     const box=element('section');versionHost(record,context).append(box);
     box.append(element('h3',record.status==='checked'?'结构与语法检查通过（尚不代表可玩）':'生成或检查失败'),element('p',record.error||`记录 ${record.record_id} · 模型 ${record.model}`));
+    if(record.status==='failed'){
+      const failure=element('section');failure.className='gw-failure-diagnostics';
+      failure.append(element('h4','原始报错'),element('pre',record.error||'未记录错误文字'));
+      const diagnostic=element('details');diagnostic.append(element('summary','查看具体校验诊断'),element('pre',JSON.stringify({parse_error:record.parse_error,failure_details:record.failure_details,finish_reason:record.finish_reason},null,2)));failure.append(diagnostic);
+      const original=element('details'),raw=element('pre');original.append(element('summary','查看模型原始返回'),raw);
+      original.addEventListener('toggle',()=>{if(original.open&&!raw.textContent)raw.textContent=record.raw_text||'未取得模型返回内容。';});failure.append(original);
+      box.append(failure);
+    }
     root.TokenUsage?.render(box,record,'本次游戏生成／修复用量');
+    for(const warning of record.warnings||[]){const note=element('p',warning);note.className='gw-warning';box.append(note);}
+    if(record.local_recovery)box.append(element('p','此版本为本地重新检查恢复，未调用模型；原始失败记录仍保留。'));
     if(record.output)box.append(renderGameDesign(record));
     const technical=element('details');technical.className='gw-version-technical';
     technical.append(element('summary','原始设计、代码与保存位置'));
@@ -355,6 +408,8 @@
     [['exit','仅记录备注／退出'],['success','人工确认成功路径通过'],['failure','人工确认失败路径'],['timeout','人工确认超时路径'],['error','人工发现运行错误']].forEach(([value,label])=>{const o=element('option',label);o.value=value;review.append(o);});box.append(review);
     const saved=readVersionDraft(record,context);
     if(saved){note.value=saved.note||'';review.value=['exit','success','failure','timeout','error'].includes(saved.review)?saved.review:'exit';}
+    else if(record.status==='failed')note.value='请修复本次失败，并返回完整设计与代码。\n原始报错：'+(record.error||'请检查原始响应').slice(0,2500);
+    if(record.status==='failed')box.append(element('small','下一轮修复会自动携带原始报错、具体校验诊断和完整原始返回，无需手动复制。'));
     versionDialog.note=note;versionDialog.review=review;versionDialog.record=record;versionDialog.context=context;
     note.oninput=review.onchange=rememberVersion;
     box.append(button('按要求修复此游戏（计费）',async()=>{if(!note.value.trim())throw Error('请填写修复要求');await generate(context,record,note.value);}),
@@ -397,7 +452,7 @@
     const shell=element('div');shell.className='gw-theater-shell';
     const header=element('header');header.className='gw-theater-header';
     const title=element('h2','大屏试玩');header.append(title);
-    const infoToggle=button('收起说明',()=>{const hidden=dialog.classList.toggle('gw-info-hidden');infoToggle.textContent=hidden?'展开说明':'收起说明';});
+    const infoToggle=button('收起说明',()=>{const hidden=dialog.classList.toggle('gw-info-hidden');infoToggle.textContent=hidden?'展开说明':'收起说明';fitTheater();});
     const fullscreen=button('浏览器全屏',()=>{});
     // Invoke directly from the user gesture (some browsers drop activation after a promise hop).
     fullscreen.onclick=()=>{
@@ -414,24 +469,63 @@
     body.append(player,info);
     const footer=element('footer');footer.className='gw-theater-footer';
     const status=element('p','准备开始；可折叠说明以扩大游戏区域。');status.setAttribute('aria-live','polite');
-    footer.append(button('开始',async()=>{if(!session||session.ended)await play(theater.record);startFrame();}),
-      button('重玩此点',()=>play(theater.record)),button('退出小游戏并继续视频',continueVideo),status);
+    footer.append(button('播放 / 暂停',()=>{const video=$('video');if(session&&!session.ended)return;if(video.paused)return video.play();video.pause();}),
+      button('开始当前游戏',async()=>{if(!theater.record)return;if(!session||session.ended)await play(theater.record);startFrame();}),
+      button('重玩此点',()=>theater.record&&play(theater.record)),button('退出小游戏并继续视频',continueVideo),status);
     footer.append(button('跳过当前点继续编排',()=>{
       if(!sequence)throw Error('当前不是串联试玩');
       sequence.error=false;closeGame('exit','跳过当前点',false);$('video').play().catch(showError);
     }),button('结束试玩',dismissTheater));
+    const timeline=element('div');timeline.className='gw-playback-timeline';
+    const clock=element('span','0:00 / 0:00'),scrub=element('input');scrub.type='range';scrub.min='0';scrub.max='0';scrub.step='0.01';scrub.value='0';scrub.setAttribute('aria-label','视频进度与试玩点定位');
+    scrub.oninput=()=>{clock.textContent=formatTime(Number(scrub.value))+' / '+formatTime($('video').duration);};
+    scrub.onchange=()=>seekPlayback(Number(scrub.value));
+    const track=element('div');track.className='gw-playback-track';
+    const markers=element('div');markers.className='gw-playback-markers';
+    timeline.append(clock,scrub,track,markers);
+    body.append(timeline);
     shell.append(header,body,footer);dialog.append(shell);document.body.append(dialog);
     theater={dialog,shell,player,info,title,status,record,marker,focus:document.activeElement,
-      width:stage.style.width,height:stage.style.height,observer:null,project:record.project_id};
+      width:stage.style.width,height:stage.style.height,observer:null,project:record?.project_id||current?.().project?.project_id,
+      timeline,scrub,clock,markers,track};
     movingPlayer=true;player.append(stage);movingPlayer=false;
     dialog.addEventListener('cancel',event=>{event.preventDefault();dismissTheater();});
     dialog.addEventListener('close',()=>{if(theater?.dialog===dialog)dismissTheater();});
     if(root.ResizeObserver){theater.observer=new root.ResizeObserver(fitTheater);theater.observer.observe(player);}
     root.addEventListener('resize',fitTheater);
-    dialog.showModal();updateTheater();fitTheater();
+    dialog.showModal();updateTheater();renderPlaybackMarkers();updatePlaybackTimeline();fitTheater();
+  }
+  function formatTime(value){const n=Number.isFinite(value)?Math.max(0,Math.floor(value)):0;return `${Math.floor(n/60)}:${String(n%60).padStart(2,'0')}`;}
+  function updatePlaybackTimeline(){if(!theater?.scrub)return;const video=$('video');
+    theater.scrub.max=String(Number.isFinite(video.duration)?video.duration:0);theater.scrub.value=String(video.currentTime||0);
+    theater.clock.textContent=`${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+  }
+  function seekPlayback(time){const video=$('video');if(!Number.isFinite(time))return;
+    if(session)closeGame('exit','移动视频进度',false);
+    if(sequence){sequence.error=false;sequence.last=time;}
+    video.currentTime=time;updatePlaybackTimeline();
+    const record=sequence?.games.find(r=>Math.abs(r.input.time_s-time)<=0.4);
+    if(record)triggerSequenceGame(record);
+  }
+  function renderPlaybackMarkers(){if(!theater?.markers)return;theater.markers.replaceChildren();theater.track?.replaceChildren();
+    const points=current?.().state?.points||[],games=sequence?.games||[];
+    for(const p of points.filter(p=>p.review==='kept'&&!p.merged_into).sort((a,b)=>a.time_s-b.time_s)){
+      const playable=games.some(r=>r.point_id===p.id),title=p.design?.title||p.opportunity;
+      const marker=button(`${formatTime(p.time_s)} · ${title}${playable?' · 可试玩':' · 仅定位'}`,()=>seekPlayback(p.time_s));
+      marker.className=playable?'gw-playback-marker playable':'gw-playback-marker';marker.title=`${p.time_s.toFixed(2)} 秒 · ${title}`;
+      theater.markers.append(marker);
+      if(theater.track&&Number.isFinite($('video').duration)&&$('video').duration>0){
+        const tick=button('●',()=>seekPlayback(p.time_s));tick.className='gw-playback-tick'+(playable?' playable':'');tick.title=marker.title;
+        tick.setAttribute('aria-label',`${p.time_s.toFixed(2)}秒 · ${title}${playable?' · 启动游戏':' · 定位画面'}`);
+        tick.style.left=Math.max(0,Math.min(100,p.time_s/$('video').duration*100))+'%';theater.track.append(tick);
+      }
+    }
+    if(!points.length)theater.markers.append(element('span','暂无交互点，可直接播放视频。'));
   }
   function updateTheater() {
-    if(!theater)return;const r=theater.record,d=r.output.design;
+    if(!theater)return;const r=theater.record;
+    if(!r){theater.title.textContent='视频编排试玩';theater.info.replaceChildren(element('h3','视频与交互点'),element('p','播放或拖动下方进度，点击时间点定位。已启用且可用的游戏到点自动开始，其余点仅定位。'));return;}
+    const d=r.output.design;
     theater.title.textContent=`${r.input.design.title} · ${r.input.time_s.toFixed(2)} 秒`;
     theater.info.replaceChildren();
     for(const [key,label] of [['goal','玩家目标'],['input','操作说明'],['rules','判定规则'],['feedback','反馈']]){
@@ -523,30 +617,45 @@
     if(resume)$('video').play().catch(showError);
   }
   async function startSequence() {
-    await current().beforeMutation?.();
-    const now=current();if(!now.verified||!now.project||now.busy||busy)throw Error('请先匹配视频并完成当前操作');
-    const games=await request('/game-sequence?project_id='+now.project.project_id);
-    if(games.some(r=>!matches(r,now.state.points.find(p=>p.id===r.point_id))))throw Error('页面草稿和保存的编排不一致，请先保存');
-    if(!games.length)throw Error('没有已启用且与当前玩法一致的游戏');
-    if(new Set(games.map(r=>r.input.time_s)).size!==games.length)throw Error('多个启用游戏时间相同，请错开或停用');
-    returnToVersion=null;closeVersionDialog();
-    closeGame('exit','重新开始串联',false);sequence={project:now.project.project_id,games:games.sort((a,b)=>a.input.time_s-b.input.time_s),fired:new Set(),last:0};
-    openTheater(sequence.games[0]);
-    $('video').currentTime=0;await $('video').play();
+    const now=current(),video=$('video');
+    if(!video.currentSrc&&!video.src&&!now.verified)throw Error('请先选择视频');
+    returnToVersion=null;closeVersionDialog();closeGenerationDialog();
+    closeGame('exit','重新开始串联',false);sequence={project:now.project?.project_id,games:[],fired:new Set(),last:video.currentTime};
+    openTheater(null);const active=sequence;theater.status.textContent='可播放视频；正在读取已采用游戏。';
+    try{
+      if(now.project&&now.verified){
+        const inventory=await request('/project-games?project_id='+now.project.project_id),games=[];
+        for(const p of inventory.points){
+          const entry=arrangementDraft?.projectId===now.project.project_id?arrangementDraft.entries.find(e=>e.point_id===p.point_id):null;
+          const enabled=entry?entry.enabled:p.enabled,id=entry?entry.generation_id:p.selected_generation_id;
+          if(!enabled||!id||!p.versions.some(v=>v.record_id===id&&v.usable))continue;
+          try{const r=await request('/game-generation?id='+id);if(matches(r,now.state.points.find(x=>x.id===p.point_id)))games.push(r);}catch(error){if(theater)theater.status.textContent='部分游戏读取失败，仍可观看视频。';}
+        }
+        if(sequence!==active)return;active.games=games.sort((a,b)=>a.input.time_s-b.input.time_s);
+      }
+      if(sequence!==active)return;renderPlaybackMarkers();theater.status.textContent=`已载入 ${active.games.length} 个可试玩点；播放经过或拖到标记位置即可启动。`;
+    }catch(error){if(sequence===active&&theater)theater.status.textContent='游戏暂不可用，可继续观看视频：'+error.message;}
+    if(sequence===active)video.play().catch(showError);
+  }
+  function triggerSequenceGame(record){
+    if(!sequence||sequence.triggering||session)return;
+    const active=sequence;active.fired.add(record.record_id);active.triggering=true;active.error=false;$('video').pause();
+    play(record,true,true).catch(e=>{showError(e);if(sequence===active)active.error=true;}).finally(()=>{if(sequence===active)active.triggering=false;});
   }
   function onTime() {
+    updatePlaybackTimeline();
     if(!sequence||session||sequence.error||sequence.triggering)return;const now=current(),video=$('video');
     if(now.project?.project_id!==sequence.project){sequence=null;return;}
     const previous=sequence.last;sequence.last=video.currentTime;if(previous===null||video.seeking||video.paused||video.currentTime<previous)return;
     const record=sequence.games.find(r=>!sequence.fired.has(r.record_id)&&r.input.time_s>=previous&&r.input.time_s<=video.currentTime&&matches(r,now.state.points.find(p=>p.id===r.point_id)));
-    if(record){sequence.fired.add(record.record_id);sequence.triggering=true;video.pause();
-      play(record,true,true).catch(e=>{showError(e);if(sequence)sequence.error=true;}).finally(()=>{if(sequence)sequence.triggering=false;});}
+    if(record)triggerSequenceGame(record);
   }
   function sync(){const now=current();const key=(now.project?.project_id||'')+':'+(now.project?.revision||0);
     if(taskProject!==now.project?.project_id){taskProject=now.project?.project_id;taskEpoch++;scheduleTasks(true);}
     if(versionDialog&&now.project?.project_id!==versionDialog.project)closeVersionDialog();
+    if(generationDialog&&now.project?.project_id!==generationDialog.project)closeGenerationDialog();
     if(libraryHost&&key!==libraryKey){const changed=libraryKey.split(':')[0]!==key.split(':')[0];libraryKey=key;if(changed){panel.replaceChildren();arrangementDraft=null;}refreshLibrary();}
-    if(theater&&(now.project?.project_id!==theater.project||!now.verified||!matches(theater.record,now.state.points.find(p=>p.id===theater.record.point_id))))dismissTheater();
+    if(theater&&(now.project?.project_id!==theater.project||(theater.record&&(!now.verified||!matches(theater.record,now.state.points.find(p=>p.id===theater.record.point_id))))))dismissTheater();
     if(session){if(now.project?.project_id!==session.record.project_id||!matches(session.record,now.state.points.find(p=>p.id===session.record.point_id)))closeGame('exit','项目或玩法已变化',false);}}
   root.GameWorkbench={init,offer,iframeDocument,matches,sync,fitSize,deletePoint,renderArrangement};
 })(typeof window==='undefined'?globalThis:window);

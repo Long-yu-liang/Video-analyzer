@@ -127,7 +127,7 @@ class SettingsTests(unittest.TestCase):
                 self.assertEqual(request.get_header('Authorization'), 'Bearer fixture-secret')
                 body = json.loads(request.data)
                 self.assertEqual(body['model'], 'fixture-mini')
-                self.assertEqual(body['max_completion_tokens'], 16384)
+                self.assertEqual(body['max_completion_tokens'], 32768)
                 self.assertEqual(body['reasoning_effort'], 'medium')
                 return io.BytesIO(json.dumps(response).encode())
             with patch.object(generation, 'snapshot', return_value=(project, data, 'fixture-hash')), \

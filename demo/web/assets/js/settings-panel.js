@@ -4,7 +4,7 @@ const SettingsPanel = (() => {
   const fields = {}, clearChecks = {};
   const groups = [
     ['视频分析', [['BEEROUTE_BASE_URL', 'API 地址'], ['BEEROUTE_API_KEY', 'API Key'], ['BEEROUTE_MODELS', '模型名称（每行一个）']]],
-    ['游戏生成', [['MINIMAX_BASE_URL', 'MiniMax API 地址'], ['MINIMAX_API_KEY', 'MiniMax API Key'], ['MINIMAX_MODEL', '生成模型']]],
+    ['游戏生成', [['MINIMAX_BASE_URL', 'MiniMax API 地址'], ['MINIMAX_API_KEY', 'MiniMax API Key'], ['MINIMAX_MODEL', '生成模型'], ['MINIMAX_REASONING_EFFORT', '思考深度（MiniMax-M3.1-Flash）'], ['MINIMAX_MAX_COMPLETION_TOKENS', '生成／修复输出上限（Token）']]],
     ['本地工具', [['FFMPEG_BINARY', 'FFmpeg 路径'], ['FFPROBE_BINARY', 'ffprobe 路径'], ['NODE_BINARY', 'Node.js 路径']]]
   ];
   const byId = id => document.getElementById(id);
@@ -20,7 +20,7 @@ const SettingsPanel = (() => {
     revision = data.revision;
     for (const [key, input] of Object.entries(fields)) {
       const secret = key.endsWith('_API_KEY');
-      input.value = secret ? '' : (data.values[key] || '').replace(key === 'BEEROUTE_MODELS' ? /,/g : /$^/, '\n');
+      input.value = secret ? '' : (data.values[key] || ({MINIMAX_REASONING_EFFORT:'medium',MINIMAX_MAX_COMPLETION_TOKENS:'32768'}[key]||'')).replace(key === 'BEEROUTE_MODELS' ? /,/g : /$^/, '\n');
       if (secret) {
         input.placeholder = data.configured[key] ? '已配置；留空保留原密钥' : '未配置，请填写';
         clearChecks[key].checked = false;
@@ -60,13 +60,24 @@ const SettingsPanel = (() => {
       };
       items.forEach(([key, title]) => {
         const label = document.createElement('label'); label.textContent = title;
-        const input = document.createElement(key === 'BEEROUTE_MODELS' ? 'textarea' : 'input');
+        const input = document.createElement(key==='MINIMAX_REASONING_EFFORT'?'select':key === 'BEEROUTE_MODELS' ? 'textarea' : 'input');
+        if(key==='MINIMAX_REASONING_EFFORT')for(const level of ['low','medium','high','xhigh','max']){
+          const option=document.createElement('option');option.value=level;option.textContent=level+(level==='medium'?'（默认）':'');input.append(option);
+        }
         input.id = 'setting-' + key; input.name = key;
         const secret = key.endsWith('_API_KEY');
-        if (input.tagName === 'INPUT') input.type = secret ? 'password' : 'text';
+        if (input.tagName === 'INPUT') input.type = secret ? 'password' : key==='MINIMAX_MAX_COMPLETION_TOKENS'?'number':'text';
+        if(key==='MINIMAX_MAX_COMPLETION_TOKENS'){input.min='1024';input.max='131072';input.step='1';}
         input.autocomplete = secret ? 'new-password' : 'off'; input.spellcheck = false;
         input.oninput = () => { dirty = true; }; fields[key] = input;
         label.append(input); panel.append(label);
+        if(key==='MINIMAX_REASONING_EFFORT'){
+          input.onchange=()=>{dirty=true;};
+          const hint=document.createElement('p');hint.textContent='思考更深可能增加耗时和 Token，不保证格式或玩法一定正确；MiniMax-M3.1-Flash 不能关闭思考。';panel.append(hint);
+        }
+        if(key==='MINIMAX_MAX_COMPLETION_TOKENS'){
+          const hint=document.createElement('p');hint.textContent='默认 32768，包含思考和正文额度。提高可减少长度截断，但可能增加耗时与用量；按实际生成 Token 计量，并非每次用满。';panel.append(hint);
+        }
         if (secret) {
           const clearLabel = document.createElement('label'); clearLabel.className = 'settings-check';
           const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.onchange = () => { dirty = true; };

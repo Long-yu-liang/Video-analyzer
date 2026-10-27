@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 from .. import settings
+from ..paths import MAX_VIDEO, MAX_VIDEO_SECONDS
 
 
 class MediaProcessingError(ValueError):
@@ -56,8 +57,8 @@ def probe(path, runner=None):
     if not video:
         raise ValueError('文件不包含视频画面。')
     duration = float(info['format']['duration'])
-    if not math.isfinite(duration) or not 0 < duration <= 60:
-        raise ValueError('本 Demo 仅接受 0–60 秒视频；请先裁剪。')
+    if not math.isfinite(duration) or not 0 < duration <= MAX_VIDEO_SECONDS:
+        raise ValueError('本 Demo 仅接受 0–120 秒视频；请先裁剪。')
     result = {'duration_s': duration, 'width': video['width'], 'height': video['height'],
               'has_audio': any(x['codec_type'] == 'audio' for x in info['streams']),
               'video_codec': video.get('codec_name', 'unknown')}
@@ -81,7 +82,7 @@ def extract(path, directory, duration, fps):
     # fps filter resets its output timebase; use actual source PTS via showinfo after selection.
     vf = f"select='isnan(prev_selected_t)+gte(t-prev_selected_t,{1/fps:.9f})',scale=768:768:force_original_aspect_ratio=decrease,showinfo"
     command = [settings.tool('ffmpeg'), '-hide_banner', '-i', str(path), '-an', '-vf', vf,
-               '-fps_mode', 'vfr', '-frames:v', '120', '-q:v', '4', str(directory / '%03d.jpg')]
+               '-fps_mode', 'vfr', '-frames:v', str(math.ceil(duration * fps) + 1), '-q:v', '4', str(directory / '%03d.jpg')]
     try:
         proc = subprocess.run(command, check=True, capture_output=True, timeout=90)
     except FileNotFoundError as error:
@@ -108,7 +109,7 @@ def strip_audio(path, output):
     return output
 
 
-def prepare_full_video(path, output, metadata, mode, *, remux=None, prober=None, max_video=12 * 1024 * 1024):
+def prepare_full_video(path, output, metadata, mode, *, remux=None, prober=None, max_video=MAX_VIDEO):
     """Use the entire original picture stream; no cropping or codec/preset fallback."""
     if mode not in ('direct', 'frames'):
         raise ValueError('未知视频输入方式。')
@@ -120,7 +121,7 @@ def prepare_full_video(path, output, metadata, mode, *, remux=None, prober=None,
         return path, dict(metadata), 'original_video'
     request_path = (remux or strip_audio)(path, output)
     if not request_path.is_file() or not 0 < request_path.stat().st_size <= max_video:
-        raise MediaProcessingError('verify', code='invalid_output', message='去音轨产物为空或超过 12 MiB，未调用模型。')
+        raise MediaProcessingError('verify', code='invalid_output', message='去音轨产物为空或超过 30 MiB，未调用模型。')
     actual = (prober or probe)(request_path)
     valid = not actual['has_audio'] and actual.get('video_codec') == metadata['video_codec']
     valid = valid and all(actual[k] == metadata[k] for k in ('width', 'height'))
@@ -151,12 +152,12 @@ def read_sample(root, name, max_video):
         raise ValueError('样例视频不存在。')
     data = path.read_bytes()
     if not data or len(data) > max_video:
-        raise ValueError('视频须为非空 MP4，大小不超过 12 MiB。')
+        raise ValueError('视频须为非空 MP4，大小不超过 30 MiB。')
     return data
 
 
 def segment_windows(duration):
-    """Twenty-second ownership windows, each later request sees one preceding second."""
+    """Twenty-second windows; merge tails below five seconds before any model call."""
     if duration <= 25.:
         return [(0., duration, 0., duration)]
     windows = []
@@ -165,6 +166,9 @@ def segment_windows(duration):
         core_end = min(duration, core_start + 20.)
         windows.append((core_start, core_end, max(0., core_start - 1.), core_end))
         core_start = core_end
+    if len(windows)>1 and windows[-1][1]-windows[-1][0]<5.:
+        previous=windows[-2]
+        windows[-2:]=[(previous[0],duration,previous[2],duration)]
     return windows
 
 
@@ -180,11 +184,11 @@ def _usable_segment(output, duration_s, max_video, prober):
     usable = info.get('video_codec') == 'h264' and not info.get('has_audio')
     usable = usable and isinstance(duration, (int, float)) and abs(duration - duration_s) <= 0.15
     if usable and output.stat().st_size > max_video:
-        raise ValueError('分段编码后仍超过 12 MiB，请压缩源视频。')
+        raise ValueError('分段编码后仍超过 30 MiB，请压缩源视频。')
     return usable
 
 
-def clip_video(path, output, start_s, end_s, runner=None, prober=None, max_video=12 * 1024 * 1024):
+def clip_video(path, output, start_s, end_s, runner=None, prober=None, max_video=MAX_VIDEO):
     """Cut one segment. FFmpeg 9 on Windows can exit 8987 after a finished file, or mid-write."""
     runner = runner or run
     prober = prober or probe
@@ -214,7 +218,7 @@ def clip_video(path, output, start_s, end_s, runner=None, prober=None, max_video
         if output.is_file() and 0 < output.stat().st_size <= max_video:
             return output
         if output.is_file() and output.stat().st_size > max_video:
-            raise ValueError('分段编码后仍超过 12 MiB，请压缩源视频。')
+            raise ValueError('分段编码后仍超过 30 MiB，请压缩源视频。')
     if failure:
         raise failure
     raise MediaProcessingError('transcode', code='invalid_output', message='分段编码未生成有效视频，未调用模型。')

@@ -16,6 +16,8 @@ DEFAULTS = {
     'BEEROUTE_MODELS': 'qwen3-vl-plus,qwen3.8-flash,gemini-2.5-flash-lite,qwen3.8-omni-flash',
     'MINIMAX_API_KEY': '', 'MINIMAX_BASE_URL': 'https://api.minimax.cn/v1',
     'MINIMAX_MODEL': 'MiniMax-M3.1-Flash',
+    'MINIMAX_REASONING_EFFORT': 'medium',
+    'MINIMAX_MAX_COMPLETION_TOKENS': '32768',
     'FFMPEG_BINARY': '', 'FFPROBE_BINARY': '', 'NODE_BINARY': '',
     'DASHSCOPE_API_KEY': '', 'DASHSCOPE_BASE_URL': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     'GEMINI_API_KEY': '',
@@ -41,6 +43,10 @@ def validate(values):
                 raise ValueError(f'{key} 必须是无凭据、查询参数的 HTTPS 地址。')
         if key in ('BEEROUTE_MODELS', 'MINIMAX_MODEL') and not value.strip():
             raise ValueError(f'{key} 不能为空。')
+        if key == 'MINIMAX_REASONING_EFFORT' and value not in ('low', 'medium', 'high', 'xhigh', 'max'):
+            raise ValueError('MiniMax 思考深度须为 low、medium、high、xhigh 或 max。')
+        if key == 'MINIMAX_MAX_COMPLETION_TOKENS' and (not value.isdecimal() or not 1024 <= int(value) <= 131072):
+            raise ValueError('游戏生成输出上限须为 1024–131072 之间的整数。')
 
 
 class Store:

@@ -73,7 +73,7 @@ const fetch = async (url, options = {}) => {
   }) };
   if (url.startsWith('/events?')) {
     requestedURL = url;
-    if(partialFailure)return {ok:true,json:async()=>({status:'failed',stage:'events',model:'fixture',record_file:'partial.json',
+    if(partialFailure)return {ok:true,json:async()=>({status:'failed',stage:'events',record_id:'a'.repeat(32),metadata:{duration_s:58},model:'fixture',record_file:'partial.json',
       error:'events[0].observation_s 超出片长',segments:[{core_start_s:20,core_end_s:40,status:'failed',error:'核心时间错误'}],
       segment_coverage:{complete:false,ranges:[{start_s:0,end_s:20,status:'success'},{start_s:20,end_s:40,status:'failed'},{start_s:40,end_s:58,status:'unprocessed'}]},
       partial_analysis:{summary:'仅前20秒',limitations:['全片未完成'],events:[{observation_id:'e1',start_s:1,end_s:2,observation_s:1.5,description:'持球',evidence:'球在手中',uncertainty:'无'}]}})};
@@ -112,7 +112,8 @@ const fetch = async (url, options = {}) => {
   throw new Error('unexpected request ' + url);
 };
 const usageScript = fs.readFileSync(path.join(__dirname, '../../web/assets/js/token-usage.js'), 'utf8');
-vm.runInNewContext(usageScript + '\n' + script, {
+const recordPreviewScript = fs.readFileSync(path.join(__dirname, '../../web/assets/js/record-preview.js'), 'utf8');
+vm.runInNewContext(usageScript + '\n' + recordPreviewScript + '\n' + script, {
   document: { getElementById: id => nodes[id], createElement: () => element() },
   fetch, URLSearchParams, encodeURIComponent, URL, Blob, setTimeout, console,
 });
@@ -213,7 +214,7 @@ vm.runInNewContext(usageScript + '\n' + script, {
   assert.equal(nodes.mode.value, 'direct');
   assert.equal(nodes.fps.value, '2');
   assert.equal(nodes.eventPrompt.value, 'v14');
-  assert.equal(nodes.summary.textContent, '尚未调用模型。没有预置分析结果。');
+  assert.equal(nodes.summary.textContent, '');
   assert.match(nodes.status.textContent, /初始状态/);
   nodes.sample.value='S05_传球投篮.mp4';
   await nodes.sample.onchange();
@@ -225,13 +226,15 @@ vm.runInNewContext(usageScript + '\n' + script, {
   failMedia=false;partialFailure=true;
   await nodes.recognize.onclick();
   assert.match(nodes.summary.textContent,/仅已完成片段/);
-  assert.equal(nodes.suggest.disabled,true,'partial results cannot be sent to step two');
+  assert.equal(nodes.suggest.disabled,false,'completed events remain usable for step two');
   assert.match(nodes.reviewHint.textContent,/全片未完成/);
   const partialEvent=nodes.events.children.find(child=>child.className==='event');
-  assert.equal(partialEvent.children[0].disabled,true);
+  assert.equal(partialEvent.children[0].disabled,false);
+  assert.equal(partialEvent.children[0].checked,true);
   partialEvent.children[1].click();assert.equal(nodes.video.currentTime,1.5,'partial events remain seekable');
   const diagnostic=nodes.events.children.find(child=>child.className==='validation-warnings');
   assert.ok(diagnostic.children.some(child=>child.textContent.includes('尚未处理')));
   assert.match(nodes.status.textContent,/超出片长/);
+  await nodes.suggest.onclick();assert.equal(nodes.recommend.disabled,false,'partial input can produce selectable opportunities');
   console.log('UI point seek and empty state OK');
 })().catch(error => { console.error(error); process.exitCode = 1; });

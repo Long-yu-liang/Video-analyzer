@@ -13,6 +13,7 @@ assert.equal(p.stale,false);M.confirmPoint(p);assert.equal(p.confirmed,true,'bri
 p.brief={screen:'控件',rules:'明确判定',transition:'返回视频'};M.confirmPoint(p);assert.equal(p.confirmed,true);
 M.change(p,{time_s:3});assert.equal(p.stale,true);assert.equal(p.confirmed,false);assert.equal(p.versions[0].time_s,2);
 M.choose(p,p.versions[0]);assert.equal(p.stale,true);
+M.confirmPoint(p);assert.equal(p.confirmed,true);assert.equal(p.stale,false,'description can be confirmed without a separate frame-review step');
 const old=JSON.stringify(p.design);records.gameplay={...records.gameplay,record_id:'d'.repeat(32)};
 M.ingest(state,records);assert.equal(p.versions.length,2);assert.equal(JSON.stringify(p.design),old);
 assert.equal(p.selected,`${game}_p1-option-1`);

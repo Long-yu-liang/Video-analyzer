@@ -34,6 +34,7 @@ class TaskTests(unittest.TestCase):
             self.assertIn(job['status'],tasks.RUNNING)
             self.assertEqual(tasks.listing(self.root,self.project['project_id'])[0]['task_id'],job['task_id'])
             with self.assertRaises(generation.Conflict):tasks.start(self.root,self.payload,runner=runner)
+            with self.assertRaises(generation.Conflict):tasks.dismiss(self.root,{'project_id':self.project['project_id'],'task_id':job['task_id']})
             with self.assertRaises(generation.Conflict):self.store.delete(self.project)
             settings.Store(self.root).save({'revision':0,'values':{'MINIMAX_MODEL':'changed-after-start'}})
         finally:
@@ -72,3 +73,22 @@ class TaskTests(unittest.TestCase):
         record=generation.read(self.root,result['generation_id'])
         self.assertEqual(record['status'],'checked')
         self.assertFalse(record['validation']['playtested'])
+
+    def test_dismiss_finished_task_is_persistent_and_keeps_generation(self):
+        fixture=fixtures.GameWorkbenchTests()
+        tasks.start(self.root,self.payload,runner=lambda root,payload,**kw:generation.generate(root,payload,opener=fixture.opener,**kw))
+        task=self.wait_done()
+        tasks.dismiss(self.root,{'project_id':self.project['project_id'],'task_id':task['task_id']})
+        self.assertEqual(tasks.listing(self.root,self.project['project_id']),[])
+        self.assertEqual(generation.read(self.root,task['generation_id'])['status'],'checked')
+        with self.assertRaises(ValueError):tasks.dismiss(self.root,{'project_id':self.project['project_id'],'task_id':'../bad'})
+
+    def test_recycled_game_task_disappears_and_returns_after_restore(self):
+        from video_analyzer.projects import game_management as management
+        fixture=fixtures.GameWorkbenchTests()
+        tasks.start(self.root,self.payload,runner=lambda root,payload,**kw:generation.generate(root,payload,opener=fixture.opener,**kw))
+        task=self.wait_done()
+        removed=management.remove(self.root,{**self.payload,'kind':'game','generation_id':task['generation_id']})
+        self.assertEqual(tasks.listing(self.root,self.project['project_id']),[])
+        management.restore(self.root,{'project_id':self.project['project_id'],'revision':removed['project']['revision'],'operation_id':removed['operation_id']})
+        self.assertEqual(tasks.listing(self.root,self.project['project_id'])[0]['task_id'],task['task_id'])
