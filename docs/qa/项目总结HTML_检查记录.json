@@ -1,0 +1,135 @@
+{
+  "source": "视频分析器_项目总结.md",
+  "source_sha256": "535cb52a9f298325da2862d15be0dca487253db1ea9187ae8d3f00aeb22c4cb0",
+  "output": "视频分析器_项目总结.html",
+  "chapters": 7,
+  "paragraphs": 60,
+  "tables": 5,
+  "images": [
+    {
+      "path": "docs/assets/视频分析器_完整流程.png",
+      "sha256": "af1e3fe96d36627f8dd7ab2b2bb6e8f36c783278dc81cd9915aa9b4ccc7caedd",
+      "bytes": 2125389,
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "docs/assets/视频分析.png",
+      "sha256": "586cfd0a776aa8508c9747429156c01f167329d060b2bfe603f94195aee30252",
+      "bytes": 235333,
+      "width": 1351,
+      "height": 787
+    },
+    {
+      "path": "docs/assets/寻找交互点.png",
+      "sha256": "f22eae79dfe319394750f62fb71bb36dc1040a88700739119fc43b963fb55094",
+      "bytes": 141681,
+      "width": 1285,
+      "height": 601
+    },
+    {
+      "path": "docs/assets/玩法推荐.png",
+      "sha256": "0935ba0e1a26199c437976662fdc5d7081b2cc7bfd579feb261e4106746ec69f",
+      "bytes": 241265,
+      "width": 1275,
+      "height": 920
+    },
+    {
+      "path": "docs/assets/单点生成游戏.png",
+      "sha256": "31b9d3ccfb7047a87b46979abbdc94f0d83739c1c2987705ef4760b9193eadb2",
+      "bytes": 251104,
+      "width": 1285,
+      "height": 811
+    },
+    {
+      "path": "docs/assets/视频分析器_模型分工.png",
+      "sha256": "db33062e5b4388b8931002bb5301f1aa11452c9359226ce3386dd85b8b03f0ec",
+      "bytes": 1994829,
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "docs/assets/视频分析器_七类小游戏玩法.png",
+      "sha256": "a6aabfec277de8c50f6c2b41523968d39c12e1dd64c2157c7138007d1e8beb0b",
+      "bytes": 1948382,
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "docs/assets/任务划分工作区.png",
+      "sha256": "4bbef4d4353baeeadc1b6424d5f606cf321df8296d4177126f484c4f6fdf0b4a",
+      "bytes": 44082,
+      "width": 1625,
+      "height": 254
+    },
+    {
+      "path": "docs/assets/交互点管理.png",
+      "sha256": "25edb6f5e2f074a493733cf67bb6dc24e1fef0603a3f8fc1188232a2f93e3199",
+      "bytes": 72486,
+      "width": 1259,
+      "height": 388
+    },
+    {
+      "path": "docs/assets/交互弹窗.png",
+      "sha256": "219e042fea0e1d2e1011013846623cfd328295883c2626e441544da7e66f1b4e",
+      "bytes": 193708,
+      "width": 1593,
+      "height": 906
+    },
+    {
+      "path": "docs/assets/大屏.png",
+      "sha256": "dc16403e83f21f38fbc7fa1d32f01ae13bcc5ae2610b07d260768ad5ed114b7c",
+      "bytes": 959839,
+      "width": 1873,
+      "height": 911
+    },
+    {
+      "path": "docs/assets/设置管理.png",
+      "sha256": "b93ef7e1d05ebb122766aaceb0df438a696e6aa3bc4af62ab3593f641fab54c8",
+      "bytes": 17402,
+      "width": 1555,
+      "height": 100
+    }
+  ],
+  "self_contained": true,
+  "bytes": 11019312,
+  "layout": "editorial long-form, native chapter navigation, before/after comparison",
+  "source_unchanged": true,
+  "validation": {
+    "html_structure": "pass",
+    "paragraphs_preserved": 60,
+    "image_hashes": "12/12 matched",
+    "links": "all local chapter anchors",
+    "offline": "no external resources",
+    "responsive": "single-column layouts and stacked tables declared at 920px",
+    "contrast": {
+      "body_on_background": 12.28,
+      "muted_on_background": 5.14,
+      "accent_on_background": 6.92,
+      "control_on_surface": 5.51
+    },
+    "visual_preview": "not performed; local file navigation was previously blocked by browser policy"
+  },
+  "self_critique": {
+    "philosophy_consistency": {
+      "score": 8,
+      "evidence": "Six color tokens, two system font families, repeated editorial .chapter structure."
+    },
+    "visual_hierarchy": {
+      "score": 8,
+      "evidence": "Single h1, .chapter-heading rhythm, .toc and restrained numbered chapter labels."
+    },
+    "detail_execution": {
+      "score": 7,
+      "evidence": "Responsive table labels, intrinsic image dimensions, separated before/after panels; evaluated from source, not screenshot."
+    },
+    "functionality": {
+      "score": 7,
+      "evidence": "Native navigation/details, optional dialog with Escape and focus return, 12 embedded image hashes verified; visual interaction not yet inspected."
+    },
+    "innovation": {
+      "score": 6,
+      "evidence": "Utility-focused editorial report with paired problems/solutions; deliberately restrained."
+    }
+  }
+}
