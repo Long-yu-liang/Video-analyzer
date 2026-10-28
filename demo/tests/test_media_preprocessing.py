@@ -13,9 +13,10 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import app
 from video_analyzer.media import processing as media
+from test_support import MockModelTestCase
 
 
-class MediaPreprocessingChecks(unittest.TestCase):
+class MediaPreprocessingChecks(MockModelTestCase):
     def setUp(self):
         self.meta = {'duration_s': 22.856833, 'width': 1280, 'height': 720, 'has_audio': True,
                      'video_codec': 'h264', 'video_duration_s': 22.768, 'video_start_s': 0.003,

@@ -27,10 +27,10 @@ function element(id = '') {
 
 const ids = ['model', 'mode', 'fps', 'eventPrompt', 'opportunityPrompt', 'gameplayPrompt', 'promptPreview', 'flowHint', 'sample', 'file', 'video', 'recognize', 'suggest', 'recommend', 'reset', 'reviewHint',
   'download', 'summary', 'metrics', 'points', 'events', 'limitations', 'catalogNote', 'gameplay', 'saveBrief',
-  'raw', 'status', 'configState', 'tokenUsage', 'generationPromptPreviewVersion', 'generationPromptActive', 'generationPromptPreview'];
+  'raw', 'status', 'analysisWait', 'configState', 'tokenUsage', 'generationPromptPreviewVersion', 'generationPromptActive', 'generationPromptPreview'];
 const nodes = Object.fromEntries(ids.map(id => [id, element(id)]));
 
-let requestedURL, briefBody;
+let requestedURL, briefBody, timerTick=null, clock=0;
 let failMedia = false;
 let partialFailure = false;
 let partialGameplay = false;
@@ -39,6 +39,7 @@ let gameplayRecommendations = [{ point_id: 'p1', observation_id: 'e1', event_id:
   fit: '持球且有可见分支', player_goal: '作出选择', player_action: '在动作里选一个',
   success: '选中一个动作', failure: '时间结束未选', feedback: '显示所选项' }];
 const fetch = async (url, options = {}) => {
+  if(url.startsWith('/events?')&&timerTick){clock+=23000;timerTick();assert.match(nodes.analysisWait.textContent,/已等待 23 秒/);}
   if (url === '/config') return { json: async () => ({
     models: { 'qwen3.8-flash': 'beeroute', 'qwen3-vl-plus': 'beeroute' }, samples: ['S05_传球投篮.mp4'],
     configured: { beeroute: true }, prompt_file: 'prompts/v7.txt',
@@ -118,7 +119,7 @@ const usageScript = fs.readFileSync(path.join(__dirname, '../../web/assets/js/to
 const recordPreviewScript = fs.readFileSync(path.join(__dirname, '../../web/assets/js/record-preview.js'), 'utf8');
 vm.runInNewContext(usageScript + '\n' + recordPreviewScript + '\n' + script, {
   document: { getElementById: id => nodes[id], createElement: () => element() },
-  fetch, URLSearchParams, encodeURIComponent, URL, Blob, setTimeout, console,
+  fetch, URLSearchParams, encodeURIComponent, URL, Blob, setTimeout, console, performance:{now:()=>clock}, setInterval: fn => {timerTick=fn;return 1;}, clearInterval: () => {timerTick=null;},
 });
 
 (async () => {
@@ -148,6 +149,9 @@ vm.runInNewContext(usageScript + '\n' + recordPreviewScript + '\n' + script, {
   await nodes.sample.onchange();
   assert.equal(nodes.recognize.disabled, false);
   await nodes.recognize.onclick();
+  assert.equal(nodes.analysisWait.hidden,false);
+  assert.match(nodes.analysisWait.textContent,/事件识别.*请求已结束/);
+  assert.equal(timerTick,null,'request completion clears the wait timer');
   assert.equal(nodes.tokenUsage.children.length, 3, 'stage usage remains visible after a call');
   assert.match(requestedURL, /^\/events\?/);
   assert.match(requestedURL, /version=v14/);

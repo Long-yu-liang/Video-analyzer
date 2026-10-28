@@ -77,6 +77,32 @@ class GameplayBatchTests(unittest.TestCase):
         self.assertEqual(record['analysis']['incomplete_points'][0]['point_id'],'p6')
         self.assertEqual(len(record['analysis']['recommendations']),5)
 
+    def test_small_batches_keep_all_images_and_cover_every_point(self):
+        from video_analyzer import settings
+        with patch.dict('os.environ', {'GAMEPLAY_BATCH_SIZE':'2'}):
+            record,calls=self.run_batches(6,lambda batch:{'recommendations':[option(pid) for pid in batch['selected_point_ids']]})
+        self.assertEqual([len(ids) for _,ids in calls],[2,2,2])
+        self.assertEqual(record['batch_size'],2)
+        self.assertTrue(record['coverage']['complete'])
+        self.assertEqual(sum(sum(item['type']=='image_url' for item in body['messages'][0]['content']) for body,_ in calls),6)
+
+    def test_null_usage_details_and_failed_batch_do_not_break_totals(self):
+        def reply(batch):
+            if batch['batch_index']==1:
+                batch['usage']=None
+                raise TimeoutError('fixture upstream timeout')
+            batch['usage']['prompt_tokens_details']=None
+            batch['usage']['completion_tokens_details']={'reasoning_tokens':0}
+            return {'recommendations':[option(pid) for pid in batch['selected_point_ids']]}
+        record,calls=self.run_batches(6,reply)
+        self.assertEqual(record['status'],'partial')
+        self.assertEqual(record['coverage']['incomplete_count'],5)
+        self.assertTrue(record['usage_incomplete'])
+        self.assertEqual(record['usage_reported_subtotal']['total_tokens'],30)
+        self.assertNotIn('total_tokens',record['usage'])
+        self.assertEqual(record['model_request_count'],2)
+        self.assertIn('未完成',record['error'])
+
     def test_single_point_can_start_without_prior_gameplay(self):
         record,calls=self.run_batches(1,lambda batch:{'recommendations':[option('p1')]})
         self.assertEqual(record['status'],'success')

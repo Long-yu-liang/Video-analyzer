@@ -48,6 +48,12 @@ const find = id => Object.values(ids).flatMap(root => {
   await ids.settingsSave.onclick();
   assert.equal(values.BEEROUTE_MODELS,'qwen3-vl-plus,fixture-other');
   assert.equal(refreshed,1);
+  assert.equal(values.ANALYSIS_MAX_TOKENS,'16384');
+  assert.equal(values.ANALYSIS_THINKING,'disabled');
+  find('GAMEPLAY_BATCH_SIZE').value='2';find('ANALYSIS_THINKING_PARAMETER').value='chat_template';
+  await ids.settingsSave.onclick();
+  assert.equal(values.GAMEPLAY_BATCH_SIZE,'2');
+  assert.equal(values.ANALYSIS_THINKING_PARAMETER,'chat_template');
   conflict = true;
   find('MINIMAX_MODEL').value='unsaved-draft'; find('MINIMAX_MODEL').oninput();
   await ids.settingsSave.onclick();

@@ -1,5 +1,18 @@
 
 const $=id=>document.getElementById(id);let config,record,eventRecord,opportunityRecord,gameplayRecord,blobURL,busy=false,reviewChecks=[],pointControls=[],selectionDrafts=[],designDrafts=[],recommendationDrafts=[];
+let analysisWaitTimer=null,analysisWaitStarted=0,analysisWaitLabel='';
+function startAnalysisWait(label){
+  clearInterval(analysisWaitTimer);analysisWaitStarted=performance.now();analysisWaitLabel=label;
+  const host=$('analysisWait');if(!host)return;
+  host.hidden=false;
+  const tick=()=>{host.textContent=`${label} · 已等待 ${Math.floor((performance.now()-analysisWaitStarted)/1000)} 秒（包含视频处理及模型响应）`;};
+  tick();analysisWaitTimer=setInterval(tick,1000);
+}
+function stopAnalysisWait(){
+  if(!analysisWaitTimer)return;
+  clearInterval(analysisWaitTimer);analysisWaitTimer=null;
+  const host=$('analysisWait');if(host)host.textContent=`${analysisWaitLabel} · 本次请求已结束，用时 ${Math.floor((performance.now()-analysisWaitStarted)/1000)} 秒`;
+}
 const rawViewer=typeof RecordPreview==='undefined'?null:RecordPreview.create($('analysisRecordDetails'),$('raw'),()=>record);
 function updateRawPreview(){if(rawViewer)rawViewer.refresh();else $('raw').textContent=record?'记录已保存，可导出查看完整内容。':'暂无分析记录。';}
 const selectedEventIds=()=>reviewChecks.filter(item=>item.checked).map(item=>item.value);
@@ -119,7 +132,7 @@ fetch('/config').then(r=>r.json()).then(c=>{
   if(typeof SettingsPanel!=='undefined')SettingsPanel.init({token:c.token,afterSave:async()=>{
     const response=await fetch('/config');if(!response.ok)throw new Error('刷新设置失败');
     const latest=await response.json(),previous=$('model').value;
-    config.models=latest.models;config.configured=latest.configured;
+    config.models=latest.models;config.configured=latest.configured;config.gameplay_batch_size=latest.gameplay_batch_size;
     $('model').replaceChildren(...Object.keys(config.models||{}).map(name=>{const option=document.createElement('option');option.value=option.textContent=name;return option}));
     if(config.models?.[previous])$('model').value=previous;
     ready();
@@ -268,6 +281,7 @@ $('recognize').onclick=async()=>{
   busy=true;ready();$('file').disabled=$('sample').disabled=true;
   eventRecord=null;opportunityRecord=null;reviewChecks=[];pointControls=[];clearGameplay();$('download').disabled=true;
   $('events').replaceChildren();$('points').replaceChildren();$('limitations').replaceChildren();$('summary').textContent='第一步：识别事件中…';
+  startAnalysisWait('事件识别');
   $('status').textContent=`正在调用 ${$('model').value} 识别画面事件（计费）。`;
   let mediaFailure=false;
   try{
@@ -294,11 +308,12 @@ $('recognize').onclick=async()=>{
     for(const item of result.analysis.limitations){const li=document.createElement('li');li.textContent=item;$('limitations').append(li)}
     $('status').textContent=`事件已保存${segmentInfo}。请回看并审核，再点击第二步。`;
   }catch(error){$('summary').textContent=mediaFailure?'视频预处理失败，分析未完成。':'第一步未获得通过校验的事件。';$('status').textContent=error.message}
-  finally{busy=false;$('file').disabled=$('sample').disabled=false;ready()}
+  finally{stopAnalysisWait();busy=false;$('file').disabled=$('sample').disabled=false;ready()}
 };
 $('suggest').onclick=async()=>{
   const selected=selectedEventIds();if(!eventRecord||!selected.length)return;
   busy=true;opportunityRecord=null;pointControls=[];clearGameplay();ready();$('file').disabled=$('sample').disabled=true;
+  startAnalysisWait('交互机会分析');
   $('points').replaceChildren();$('status').textContent=`正在调用 ${$('model').value} 寻找参与机会（计费）。`;
   try{
     const {params,body}=videoRequestParams();params.record_id=eventRecord.record_id;params.selected=selected.join(',');params.version=$('opportunityPrompt').value;params.model=$('model').value;
@@ -313,13 +328,15 @@ $('suggest').onclick=async()=>{
       ?`保留 ${result.analysis.interaction_points.length} 条可定位候选，另有 ${counts?.rejected_count||result.analysis.warnings.length} 项未采用；请查看警告并回看。`
       :'候选已保存。点击每个位置回看，核查理由是否符合该画面。';
   }catch(error){$('status').textContent=error.message}
-  finally{busy=false;$('file').disabled=$('sample').disabled=false;ready()}
+  finally{stopAnalysisWait();busy=false;$('file').disabled=$('sample').disabled=false;ready()}
 };
 $('recommend').onclick=async(options={})=>{
   const selected=options.pointId?[options.pointId]:typeof Workbench!=='undefined'&&Workbench.gameplayPointIds?Workbench.gameplayPointIds():selectedPointIds();if(!opportunityRecord||!selected.length)return;
   busy=true;const previous={gameplayRecord,selectionDrafts,designDrafts,recommendationDrafts};ready();$('file').disabled=$('sample').disabled=true;
   const batched=Number($('gameplayPrompt').value.slice(1))>=20;
-  $('status').textContent=`正在调用 ${$('model').value} 推荐玩法：${selected.length} 个点，${batched?`每批最多 5 个，共 ${Math.ceil(selected.length/5)} 批`:'单次调用'}（计费）。`;
+  const batchSize=config.gameplay_batch_size||5;
+  startAnalysisWait('玩法推荐');
+  $('status').textContent=`正在调用 ${$('model').value} 推荐玩法：${selected.length} 个点，${batched?`每批最多 ${batchSize} 个，共 ${Math.ceil(selected.length/batchSize)} 批`:'单次调用'}（计费）。`;
   try{
     const {params,body}=videoRequestParams();params.record_id=opportunityRecord.record_id;params.selected=selected.join(',');params.version=$('gameplayPrompt').value;params.model=$('model').value;
     const times={};
@@ -340,7 +357,7 @@ $('recommend').onclick=async(options={})=>{
     $('status').textContent=coverage?`已处理 ${coverage.requested_count} 个点：${coverage.recommended_count} 个有推荐，${coverage.abstained_count} 个明确不推荐，${coverage.incomplete_count} 个未完成。${coverage.incomplete_count?'可点击“仅推荐此点”补充，已有方案保留。':''}`:warningCount?`玩法推荐已保存，有 ${warningCount} 项输出警告，合法玩法已保留；请查看下方详情。`
       :gameplayRecord.schema_version===2?'历史 v19 规则设计：请比较方案并完成对应审核。':'玩法推荐已保存。请查看为什么适合、玩家怎么玩，再接受、修改或放弃。';
   }catch(error){gameplayRecord=previous.gameplayRecord;selectionDrafts=previous.selectionDrafts;designDrafts=previous.designDrafts;recommendationDrafts=previous.recommendationDrafts;$('status').textContent=error.message+(previous.gameplayRecord?'；已有草稿保留。':'')}
-  finally{busy=false;$('file').disabled=$('sample').disabled=false;ready()}
+  finally{stopAnalysisWait();busy=false;$('file').disabled=$('sample').disabled=false;ready()}
 };
 $('saveBrief').onclick=async()=>{
   if(!opportunityRecord||!gameplayRecord||(!selectionDrafts.length&&!designDrafts.length&&!recommendationDrafts.length))return;

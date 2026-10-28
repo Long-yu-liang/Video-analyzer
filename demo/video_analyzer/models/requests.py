@@ -31,10 +31,10 @@ def build_request(model, mode, fps, data, frames, metadata, prompt, models, supp
                 content += [{'type': 'text', 'text': f"画面时间 {frame['time_s']:.6f} 秒"},
                             {'type': 'image_url', 'image_url': {'url': 'data:image/jpeg;base64,' + frame['data']}}]
         body = {'model': model, 'messages': [{'role': 'user', 'content': content}],
-                'response_format': {'type': 'json_object'}, 'max_tokens': 4096, 'enable_thinking': False}
-        base = settings.get('DASHSCOPE_BASE_URL', 'https://dashscope.aliyuncs.com/compatible-mode/v1').rstrip('/')
-        if not base.startswith('https://'):
-            raise ValueError('模型 API 地址必须使用 HTTPS。')
+                **settings.analysis_options(model)}
+        if settings.requested_thinking(body) is False:
+            body['response_format'] = {'type': 'json_object'}
+        base = settings.api_base_url(settings.get('DASHSCOPE_BASE_URL', 'https://dashscope.aliyuncs.com/compatible-mode/v1'))
         return base + '/chat/completions', body, audio
     if provider == 'beeroute':
         content = [{'type': 'text', 'text': prompt}]
@@ -49,13 +49,10 @@ def build_request(model, mode, fps, data, frames, metadata, prompt, models, supp
             for frame in frames:
                 content += [{'type': 'text', 'text': f"画面时间 {frame['time_s']:.6f} 秒"},
                             {'type': 'image_url', 'image_url': {'url': 'data:image/jpeg;base64,' + frame['data']}}]
-        body = {'model': model, 'messages': [{'role': 'user', 'content': content}], 'max_tokens': 4096}
-        if model.startswith('qwen'):
-            body['enable_thinking'] = False
+        body = {'model': model, 'messages': [{'role': 'user', 'content': content}], **settings.analysis_options(model)}
+        if str(model).lower().startswith('qwen') and settings.requested_thinking(body) is False:
             body['response_format'] = {'type': 'json_object'}
-        base = settings.get('BEEROUTE_BASE_URL', 'https://beeroute.ai/v1').rstrip('/')
-        if not base.startswith('https://'):
-            raise ValueError('模型 API 地址必须使用 HTTPS。')
+        base = settings.api_base_url(settings.get('BEEROUTE_BASE_URL', 'https://beeroute.ai/v1'))
         return base + '/chat/completions', body, audio
     parts = [{'text': prompt}]
     if mode == 'direct':
@@ -66,7 +63,7 @@ def build_request(model, mode, fps, data, frames, metadata, prompt, models, supp
                       {'inline_data': {'mime_type': 'image/jpeg', 'data': frame['data']}}]
     return (f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
             {'contents': [{'role': 'user', 'parts': parts}],
-             'generationConfig': {'responseMimeType': 'application/json', 'maxOutputTokens': 4096}}, audio)
+             'generationConfig': {'responseMimeType': 'application/json', 'maxOutputTokens': settings.analysis_options(model)['max_tokens']}}, audio)
 
 
 def modality_token_counts(usage):

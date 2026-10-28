@@ -178,6 +178,7 @@ class Handler(BaseHTTPRequestHandler):
                 'game_generation_prompts': services.prompt_catalog.game_generation_catalog(services.ROOT),
                 'games': games,
                 'game_templates': services.gameplay_design.templates(),
+                'gameplay_batch_size': int(settings.Store(services.ROOT).read()['values']['GAMEPLAY_BATCH_SIZE']),
                 'configured': self.configured()})
         if parsed.path == '/sample':
             try:
@@ -206,8 +207,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(200, settings.Store(services.ROOT).save(payload))
             except settings.SettingsConflict as error:
                 return self.respond(409, {'error': str(error)})
-            except (ValueError, TypeError):
-                return self.respond(400, {'error': '设置格式无效，请检查字段、HTTPS 地址及模型名称。'})
+            except (ValueError, TypeError) as error:
+                return self.respond(400, {'error': str(error) if isinstance(error,ValueError) else '设置格式无效，请检查字段和模型名称。'})
             except OSError:
                 return self.respond(500, {'error': '设置保存失败，请检查 config 目录权限；旧配置未被替换。'})
         if parsed.path in ('/game-tasks', '/game-task-dismiss', '/game-reparse', '/game-generation', '/game-repair', '/game-playtest', '/game-selection', '/game-delete', '/game-restore', '/arrangement', '/game-session'):

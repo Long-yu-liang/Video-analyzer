@@ -18,5 +18,6 @@ class MockModelTestCase(unittest.TestCase):
             active = settings.CURRENT.get()
             return active['_models'] if active is not None else app.MODELS
         with patch.dict(os.environ, {'BEEROUTE_API_KEY': 'fixture-no-network'}), \
+                patch.dict(app.MODELS, {name:'beeroute' for name in settings.DEFAULTS['BEEROUTE_MODELS'].split(',')}), \
                 patch.object(settings.Store, 'read', isolated), patch.object(app, 'runtime_models', models):
             return super().run(result)

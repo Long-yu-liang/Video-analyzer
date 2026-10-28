@@ -271,7 +271,7 @@ def analyze_segment(path, folder, core_start, core_end, clip_start, clip_end,
         segment['status'] = 'success'
     except TruncatedOutputError as error:
         segment['error'] = str(error)
-        if depth >= 1 or core_end - core_start <= 6.:
+        if getattr(error, 'thinking_budget_exhausted', False) or depth >= 1 or core_end - core_start <= 6.:
             raise
         middle = (core_start + core_end) / 2.
         recovered = (analyze_segment(path, folder, core_start, middle, max(0., core_start - 1.), middle,
@@ -580,12 +580,8 @@ def suggest_opportunities(raw, video_name, record_id, selected_ids, version=None
             record['observations'] = observations
             record['frame_times_s'] = [item['frame_time_s'] for item in observations]
             record['actual_prompt'] = '\n\n'.join(item['text'] for item in content if item['type'] == 'text')
-            body = {'model': model, 'messages': [{'role': 'user', 'content': content}], 'max_tokens': 4096}
-            if str(model).startswith('qwen'):
-                body['enable_thinking'] = False
-            base = settings.get('BEEROUTE_BASE_URL', 'https://beeroute.ai/v1').rstrip('/')
-            if not base.startswith('https://'):
-                raise ValueError('模型 API 地址必须使用 HTTPS。')
+            body = {'model': model, 'messages': [{'role': 'user', 'content': content}], **settings.analysis_options(model)}
+            base = settings.api_base_url(settings.get('BEEROUTE_BASE_URL', 'https://beeroute.ai/v1'))
             record['preprocess_s'] = round(time.perf_counter() - started, 3)
             output = call_v13_model(base + '/chat/completions', body, key, record)
             record['analysis'] = validate_stage_opportunities(output, observations)
@@ -777,12 +773,8 @@ def suggest_gameplay(raw, video_name, record_id, selected_ids, version=None, mod
             record['observations'] = observations
             record['frame_times_s'] = [item['frame_time_s'] for item in observations]
             record['actual_prompt'] = '\n\n'.join(item['text'] for item in content if item['type'] == 'text')
-            body = {'model': model, 'messages': [{'role': 'user', 'content': content}], 'max_tokens': 8192 if design_v2 else 4096}
-            if str(model).startswith('qwen'):
-                body['enable_thinking'] = False
-            base = settings.get('BEEROUTE_BASE_URL', 'https://beeroute.ai/v1').rstrip('/')
-            if not base.startswith('https://'):
-                raise ValueError('模型 API 地址必须使用 HTTPS。')
+            body = {'model': model, 'messages': [{'role': 'user', 'content': content}], **settings.analysis_options(model)}
+            base = settings.api_base_url(settings.get('BEEROUTE_BASE_URL', 'https://beeroute.ai/v1'))
             record['preprocess_s'] = round(time.perf_counter() - started, 3)
             if recommendation_only:
                 gameplay_batching.run(record,selected_ids,by_id,catalog,prompt,catalog_text(catalog),point_messages,

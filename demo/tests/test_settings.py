@@ -17,6 +17,29 @@ from video_analyzer import settings, application as app
 
 
 class SettingsTests(unittest.TestCase):
+    def test_private_http_api_addresses_are_supported_but_public_http_is_rejected(self):
+        from video_analyzer.models.requests import build_request
+        allowed=['http://192.168.6.122:8080/v1','http://10.1.2.3:8080/v1',
+                 'http://172.16.0.1/v1','http://127.0.0.1:9000/v1','http://localhost:8080/v1',
+                 'http://[::1]:8080/v1','http://[fd00::1]:8080/v1','https://example.com/v1']
+        for value in allowed:
+            with self.subTest(value=value):self.assertEqual(settings.api_base_url(value),value)
+        denied=['http://example.com/v1','http://8.8.8.8/v1','http://172.32.0.1/v1',
+                'http://192.0.2.1/v1','ftp://192.168.6.122/v1','http://user:secret@192.168.6.122/v1',
+                'http://192.168.6.122:bad/v1','http://192.168.6.122:99999/v1',
+                'http://192.168.6.122/v1?key=secret','http://192.168.6.122/v1#fragment']
+        for value in denied:
+            with self.subTest(value=value),self.assertRaises(ValueError) as caught:settings.api_base_url(value)
+            self.assertNotIn('secret',str(caught.exception))
+        with tempfile.TemporaryDirectory() as folder:
+            store=settings.Store(folder)
+            store.save({'revision':0,'values':{'BEEROUTE_BASE_URL':allowed[0],'BEEROUTE_MODELS':'Qwen3.8-Flash-Next'}})
+            self.assertEqual(store.public()['values']['BEEROUTE_BASE_URL'],allowed[0])
+            with settings.scope(folder):
+                url,body,_=build_request('Qwen3.8-Flash-Next','frames',2,'',[],{'duration_s':2,'has_audio':False},'fixture',{'Qwen3.8-Flash-Next':'beeroute'})
+            self.assertEqual(url,allowed[0]+'/chat/completions')
+            self.assertEqual(body['model'],'Qwen3.8-Flash-Next')
+
     def test_no_dotenv_and_secret_redaction(self):
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {}, clear=True):
             root = Path(folder)
@@ -76,7 +99,7 @@ class SettingsTests(unittest.TestCase):
                 url, body, audio = build_request('qwen3-vl-plus', 'frames', 2, '', [],
                     {'duration_s': 2, 'has_audio': False}, 'fixture', {'qwen3-vl-plus': 'beeroute'})
             self.assertEqual(url, 'https://fixture.example/v1/chat/completions')
-            self.assertEqual(body['max_tokens'], 4096)
+            self.assertEqual(body['max_tokens'], 16384)
             process = type('Process', (), {'returncode': 0, 'stdout': b'fixture version\n', 'stderr': b''})()
             with patch.object(settings.subprocess, 'run', return_value=process) as run:
                 self.assertTrue(all(v['ok'] for v in settings.check_tools(folder).values()))
@@ -94,7 +117,8 @@ class SettingsTests(unittest.TestCase):
                 with self.assertRaises(HTTPError) as caught:
                     request('/settings', token=False)
                 self.assertEqual(caught.exception.code, 403)
-                with request('/settings', {'revision': 0, 'values': {'BEEROUTE_MODELS': 'fixture-vision', 'BEEROUTE_API_KEY': 'fixture-private'}}) as response:
+                with request('/settings', {'revision': 0, 'values': {'BEEROUTE_MODELS': 'fixture-vision', 'BEEROUTE_API_KEY': 'fixture-private',
+                             'BEEROUTE_BASE_URL':'http://192.168.6.122:8080/v1'}}) as response:
                     self.assertNotIn('fixture-private', response.read().decode())
                 with request('/config') as response:
                     data = json.load(response)
@@ -116,14 +140,14 @@ class SettingsTests(unittest.TestCase):
             prompt.parent.mkdir(parents=True)
             prompt.write_text('fixture prompt', encoding='utf-8')
             settings.Store(root).save({'revision': 0, 'values': {'MINIMAX_API_KEY': 'fixture-secret',
-                'MINIMAX_MODEL': 'fixture-mini', 'MINIMAX_BASE_URL': 'https://fixture.example/v1'}})
+                'MINIMAX_MODEL': 'fixture-mini', 'MINIMAX_BASE_URL': 'http://192.168.6.122:8080/v1'}})
             project = {'project_id': 'a'*32, 'revision': 1}
             data = {'point_id': 'p1', 'video': {'name': 'fixture.mp4'}}
             output = {'design': {}, 'javascript': 'function mount(){}', 'css': ''}
             response = {'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(output)}}],
                         'usage': {'prompt_tokens': 5, 'completion_tokens': 10, 'total_tokens': 15}}
             def opener(request, **kwargs):
-                self.assertEqual(request.full_url, 'https://fixture.example/v1/chat/completions')
+                self.assertEqual(request.full_url, 'http://192.168.6.122:8080/v1/chat/completions')
                 self.assertEqual(request.get_header('Authorization'), 'Bearer fixture-secret')
                 body = json.loads(request.data)
                 self.assertEqual(body['model'], 'fixture-mini')

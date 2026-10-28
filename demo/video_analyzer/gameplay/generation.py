@@ -154,9 +154,7 @@ def generate(root, payload, opener=None, progress=None, _reserved=False):
                 'max_completion_tokens': int(settings.get('MINIMAX_MAX_COMPLETION_TOKENS', '32768')),
                 'reasoning_effort': settings.get('MINIMAX_REASONING_EFFORT', 'medium')}
         record['request'] = body
-        base = settings.get('MINIMAX_BASE_URL', 'https://api.minimax.cn/v1').rstrip('/')
-        if not base.startswith('https://'):
-            raise ValueError('MiniMax 接口必须使用 HTTPS。')
+        base = settings.api_base_url(settings.get('MINIMAX_BASE_URL', 'https://api.minimax.cn/v1'),'MiniMax API 地址')
         record['endpoint'] = base + '/chat/completions'
         record['model_call_made'] = True
         if progress:

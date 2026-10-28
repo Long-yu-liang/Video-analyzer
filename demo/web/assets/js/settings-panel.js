@@ -3,7 +3,7 @@ const SettingsPanel = (() => {
   let token, afterSave, revision = 0, dirty = false, loaded = false, saving = false, importedExtras = {};
   const fields = {}, clearChecks = {};
   const groups = [
-    ['视频分析', [['BEEROUTE_BASE_URL', 'API 地址'], ['BEEROUTE_API_KEY', 'API Key'], ['BEEROUTE_MODELS', '模型名称（每行一个）']]],
+    ['视频分析', [['BEEROUTE_BASE_URL', 'API 地址'], ['BEEROUTE_API_KEY', 'API Key'], ['BEEROUTE_MODELS', '模型名称（每行一个）'], ['ANALYSIS_MAX_TOKENS', '分析输出上限（Token，含思考）'], ['ANALYSIS_THINKING', 'Qwen 分析思考模式'], ['ANALYSIS_THINKING_PARAMETER', '思考参数位置'], ['GAMEPLAY_BATCH_SIZE', '玩法推荐每批点数']]],
     ['游戏生成', [['MINIMAX_BASE_URL', 'MiniMax API 地址'], ['MINIMAX_API_KEY', 'MiniMax API Key'], ['MINIMAX_MODEL', '生成模型'], ['MINIMAX_REASONING_EFFORT', '思考深度（MiniMax-M3.1-Flash）'], ['MINIMAX_MAX_COMPLETION_TOKENS', '生成／修复输出上限（Token）']]],
     ['本地工具', [['FFMPEG_BINARY', 'FFmpeg 路径'], ['FFPROBE_BINARY', 'ffprobe 路径'], ['NODE_BINARY', 'Node.js 路径']]]
   ];
@@ -20,7 +20,7 @@ const SettingsPanel = (() => {
     revision = data.revision;
     for (const [key, input] of Object.entries(fields)) {
       const secret = key.endsWith('_API_KEY');
-      input.value = secret ? '' : (data.values[key] || ({MINIMAX_REASONING_EFFORT:'medium',MINIMAX_MAX_COMPLETION_TOKENS:'32768'}[key]||'')).replace(key === 'BEEROUTE_MODELS' ? /,/g : /$^/, '\n');
+      input.value = secret ? '' : (data.values[key] || ({MINIMAX_REASONING_EFFORT:'medium',MINIMAX_MAX_COMPLETION_TOKENS:'32768',ANALYSIS_MAX_TOKENS:'16384',ANALYSIS_THINKING:'disabled',ANALYSIS_THINKING_PARAMETER:'top_level',GAMEPLAY_BATCH_SIZE:'5'}[key]||'')).replace(key === 'BEEROUTE_MODELS' ? /,/g : /$^/, '\n');
       if (secret) {
         input.placeholder = data.configured[key] ? '已配置；留空保留原密钥' : '未配置，请填写';
         clearChecks[key].checked = false;
@@ -60,17 +60,38 @@ const SettingsPanel = (() => {
       };
       items.forEach(([key, title]) => {
         const label = document.createElement('label'); label.textContent = title;
-        const input = document.createElement(key==='MINIMAX_REASONING_EFFORT'?'select':key === 'BEEROUTE_MODELS' ? 'textarea' : 'input');
+        const input = document.createElement(['MINIMAX_REASONING_EFFORT','ANALYSIS_THINKING','ANALYSIS_THINKING_PARAMETER'].includes(key)?'select':key === 'BEEROUTE_MODELS' ? 'textarea' : 'input');
         if(key==='MINIMAX_REASONING_EFFORT')for(const level of ['low','medium','high','xhigh','max']){
           const option=document.createElement('option');option.value=level;option.textContent=level+(level==='medium'?'（默认）':'');input.append(option);
         }
+        if(key==='ANALYSIS_THINKING')for(const [value,text] of [['disabled','请求关闭思考（默认）'],['enabled','请求开启思考'],['default','使用网关默认（不传参数）']]){
+          const option=document.createElement('option');option.value=value;option.textContent=text;input.append(option);
+        }
+        if(key==='ANALYSIS_THINKING_PARAMETER')for(const [value,text] of [['top_level','顶层 enable_thinking（云接口）'],['chat_template','chat_template_kwargs（内网部署）']]){
+          const option=document.createElement('option');option.value=value;option.textContent=text;input.append(option);
+        }
         input.id = 'setting-' + key; input.name = key;
         const secret = key.endsWith('_API_KEY');
-        if (input.tagName === 'INPUT') input.type = secret ? 'password' : key==='MINIMAX_MAX_COMPLETION_TOKENS'?'number':'text';
-        if(key==='MINIMAX_MAX_COMPLETION_TOKENS'){input.min='1024';input.max='131072';input.step='1';}
+        if (input.tagName === 'INPUT') input.type = secret ? 'password' : ['MINIMAX_MAX_COMPLETION_TOKENS','ANALYSIS_MAX_TOKENS','GAMEPLAY_BATCH_SIZE'].includes(key)?'number':'text';
+        if(['MINIMAX_MAX_COMPLETION_TOKENS','ANALYSIS_MAX_TOKENS'].includes(key)){input.min='1024';input.max='131072';input.step='1';}
+        if(key==='GAMEPLAY_BATCH_SIZE'){input.min='1';input.max='5';input.step='1';}
+        if(key==='ANALYSIS_THINKING_PARAMETER')input.onchange=()=>{dirty=true;};
         input.autocomplete = secret ? 'new-password' : 'off'; input.spellcheck = false;
         input.oninput = () => { dirty = true; }; fields[key] = input;
         label.append(input); panel.append(label);
+        if(key.endsWith('_BASE_URL')){
+          const hint=document.createElement('p');hint.textContent='支持 HTTPS；内网 IP 或 localhost 也可使用 HTTP，例如 http://192.168.6.122:8080/v1。';panel.append(hint);
+        }
+        if(key==='ANALYSIS_THINKING'){
+          input.onchange=()=>{dirty=true;};
+          const hint=document.createElement('p');hint.textContent='用于事件、机会和玩法分析。是否支持关闭思考取决于模型与网关；若接口拒绝该参数，可选择网关默认，不自动重试计费。';panel.append(hint);
+        }
+        if(key==='GAMEPLAY_BATCH_SIZE'){
+          const hint=document.createElement('p');hint.textContent='每批 1–5 个点。内网慢推理可设为 2；小批次降低单次等待，但会增加请求次数。不自动重试失败批次。';panel.append(hint);
+        }
+        if(key==='ANALYSIS_MAX_TOKENS'){
+          const hint=document.createElement('p');hint.textContent='默认 16384，每次分析调用的最大输出额度；提高可能增加等待时间及实际用量，需在网关支持范围内设置。';panel.append(hint);
+        }
         if(key==='MINIMAX_REASONING_EFFORT'){
           input.onchange=()=>{dirty=true;};
           const hint=document.createElement('p');hint.textContent='思考更深可能增加耗时和 Token，不保证格式或玩法一定正确；MiniMax-M3.1-Flash 不能关闭思考。';panel.append(hint);

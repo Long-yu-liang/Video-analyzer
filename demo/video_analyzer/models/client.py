@@ -4,6 +4,7 @@ import time
 from urllib.request import Request
 from urllib.error import HTTPError
 from ..paths import MAX_MODEL_REQUEST
+from .. import settings
 
 
 class TruncatedOutputError(ValueError):
@@ -12,9 +13,10 @@ class TruncatedOutputError(ValueError):
 
 def call_v13_model(url, body, key, record, opener, count_modalities, output_parser):
     body = dict(body)
-    if str(body.get('model', '')).startswith('qwen'):
-        body.setdefault('enable_thinking', False)
-        if body['enable_thinking'] is False:
+    for name, value in settings.analysis_options(body.get('model', '')).items():
+        body.setdefault(name, value)
+    if str(body.get('model', '')).lower().startswith('qwen'):
+        if settings.requested_thinking(body) is False:
             # Vision input supports JSON Object, not guaranteed strict JSON Schema.
             body.setdefault('response_format', {'type': 'json_object'})
     record['requested_response_format'] = body.get('response_format')
@@ -26,7 +28,8 @@ def call_v13_model(url, body, key, record, opener, count_modalities, output_pars
             raise ValueError('编码后请求过大，请减少审核画面或压缩视频。')
         record['request_bytes'] = len(payload)
         record['request_options'] = {'fps': record['fps'], 'response_format': body.get('response_format'),
-                                     'max_tokens': body.get('max_tokens'), 'enable_thinking': body.get('enable_thinking')}
+                                     'max_tokens': body.get('max_tokens'), 'enable_thinking': body.get('enable_thinking'),
+                                     'chat_template_kwargs': body.get('chat_template_kwargs')}
         entry = {'response_format': body.get('response_format'), 'request_bytes': len(payload)}
         record['api_attempts'].append(entry)
         try:
@@ -69,7 +72,21 @@ def call_v13_model(url, body, key, record, opener, count_modalities, output_pars
     if modalities is not None and record['video_tokens'] == 0:
         raise ValueError('用量中没有图像或视频 Token，不能确认模型看到了画面。')
     if record['finish_reason'] == 'length':
-        raise TruncatedOutputError(f"模型输出达到 {body.get('max_tokens', 4096)} token 上限并被截断，原始响应已保留。")
+        details = record['usage'].get('completion_tokens_details') or {}
+        reasoning = details.get('reasoning_tokens') or 0
+        completion = record['usage'].get('completion_tokens') or 0
+        thinking_limited = completion > 0 and reasoning >= completion * .8
+        record['truncation_diagnosis'] = {
+            'max_tokens': body.get('max_tokens'), 'reasoning_tokens': reasoning,
+            'completion_tokens': completion, 'content_chars': len(output),
+            'thinking_budget_exhausted': thinking_limited,
+            'requested_enable_thinking': settings.requested_thinking(body)}
+        message = f"模型输出达到 {body.get('max_tokens')} token 上限并被截断，原始响应已保留。"
+        if thinking_limited:
+            message += f"其中思考消耗 {reasoning} Token；请检查网关思考设置或提高分析输出额度，未自动拆段重试。"
+        error = TruncatedOutputError(message)
+        error.thinking_budget_exhausted = thinking_limited
+        raise error
     if record['finish_reason'] not in ('stop', 'STOP'):
         raise ValueError('模型未正常结束，原始输出已保留。')
     return output_parser(output)
